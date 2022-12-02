@@ -1,0 +1,27 @@
+select 
+left(a.regdate, 8) as date_reg,
+a.escrow_idx, 
+a.escrow_seller_idx, 
+a.escrow_buyer_idx, 
+b.escrow_item_idx, 
+b.item_price, 
+a.escrow_payment_method,
+c.escrow_platform_type,
+b.item_title, 
+(select concat(left(item.item_category_id,3),'0000') from item_tbl item where item.item_idx = b.item_idx) as category_id,
+b.escrow_status,
+if(biz.escrow_idx is not NULL, 'biz_item', 'normal_item') as biz,
+charge.escrow_charge
+
+from 
+escrow_tbl a
+    left join escrow_biz_tbl biz on biz.escrow_idx = a.escrow_idx
+    left join (SELECT escrow_idx, sum(escrow_charge_fee) as escrow_charge FROM hellomarket_web.escrow_charge_tbl 
+                where escrow_charge_type in ('01', '02') group by escrow_idx) charge 
+        on charge.escrow_idx = a.escrow_idx, 
+escrow_item_tbl b, escrow_platform_tbl c
+
+where a.escrow_idx = b.escrow_idx
+and b.escrow_idx = c.escrow_idx
+and b.escrow_status not in ('PW')
+and STR_TO_DATE(left(a.regdate,8), '%Y%m%d') >= DATE_SUB(NOW(),INTERVAL 13 month)
