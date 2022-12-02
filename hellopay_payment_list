@@ -25,3 +25,6 @@ where a.escrow_idx = b.escrow_idx
 and b.escrow_idx = c.escrow_idx
 and b.escrow_status not in ('PW')
 and STR_TO_DATE(left(a.regdate,8), '%Y%m%d') >= DATE_SUB(NOW(),INTERVAL 13 month)
+
+
+-- 좀 더 가볍게 만들어야 함 (ex. biz도 지우고, category도 자르지 말고...)
