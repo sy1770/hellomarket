@@ -1,0 +1,10 @@
+select 
+left(transaction_date,6) as date_month, 
+item_category_id, 
+sum(if((item_sell_method='03' or item_sell_method='04' or item_sell_method='05') and item_price=0, 1,0)) as H_T_C,
+count(*) as transactions, 
+sum(item_price) as GMV
+
+from transaction_item_tbl
+
+group by date_month, item_category_id
