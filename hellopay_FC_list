@@ -7,48 +7,26 @@ select	left(escrow_item_tbl.regdate, 14) as regdate_datetime,
         escrow_tbl.escrow_buyer_idx,
         escrow_platform_tbl.escrow_platform_type,
         if(transaction_tbl.item_category_id is not null, transaction_tbl.item_category_id,
-            (select item.item_category_id from item_tbl as item where item.item_idx = escrow_item_tbl.item_idx)) as item_category_id,
+          if(escrow_item_tbl.editdate<20200201000000 or escrow_item_tbl.editdate>=20210401000000,
+            (select item.item_category_id from item_tbl as item where item.item_idx = escrow_item_tbl.item_idx),NULL)) 
+        as item_category_id,
         
         escrow_tbl.escrow_payment_method,
-        (escrow_tbl.escrow_charge) as buyer_charge_amount,
-        charge_tbl.escrow_charge_normal,
-        charge_tbl.escrow_charge_biz,
-        charge_tbl.payment_charge,
-        (escrow_tbl.escrow_amount) as payment_amount,
+        (escrow_tbl.escrow_charge) as escrow_charge,
+        (escrow_tbl.escrow_amount) as escrow_amount,
         (escrow_item_tbl.item_price) as item_price,
         -1*(escrow_tbl.escrow_wallet_amount) as wallet_amount,
         -1*(escrow_tbl.escrow_wallet_point) as point_amount,
         escrow_payment_finance_name,
-        escrow_item_tbl.item_idx,
+        escrow_item_tbl.item_idx
 
-        /*
-        escrow_biz_tbl.member_biz_type,
-        case
-        when bbb.item_idx is not NULL and ccc.item_idx is not NULL then 'hellopay + direct'
-        when bbb.item_idx is NULL and ccc.item_idx is not NULL then 'direct only'
-        when bbb.item_idx is not NULL and ccc.item_idx is NULL then 'hellopay only'
-        end as hellopay_only_type,
-        */
-        coupon.coupon_price,
-        d.coupon_inventory_idx,
-        d.coupon_title
-
-from 	escrow_tbl
-            left join escrow_coupon_tbl as coupon using(escrow_idx)
-            left join hellomarket_coupon_kr.coupon_issue_tbl c using(coupon_issue_idx)
-            left join hellomarket_coupon_kr.coupon_inventory_tbl d using(coupon_inventory_idx)
-            left join (
-                SELECT escrow_idx, 
-                        sum(if(escrow_charge_type = '02', escrow_charge_fee, NULL)) as escrow_charge_normal,
-                        sum(if(escrow_charge_type = '04', escrow_charge_fee, NULL)) as escrow_charge_biz,
-                        sum(if(escrow_charge_type = '01', escrow_charge_fee, NULL)) as payment_charge
-                FROM escrow_charge_tbl 
-                group by escrow_idx
-            ) charge_tbl on escrow_tbl.escrow_idx = charge_tbl.escrow_idx, 
+from 	escrow_tbl,
         escrow_platform_tbl, 
         escrow_item_tbl left join (
             select aaa.item_idx, aaa.item_category_id
             from hellomarket_analytics.transaction_item_tbl aaa
+            where aaa.transaction_date >= DATE_FORMAT(DATE_SUB(NOW(),INTERVAL 40 month), '%Y%m%d000000')
+
             group by aaa.item_idx
             ) transaction_tbl on escrow_item_tbl.item_idx = transaction_tbl.item_idx
         
@@ -56,4 +34,3 @@ from 	escrow_tbl
 where 	escrow_tbl.escrow_idx=escrow_item_tbl.escrow_idx
         and escrow_tbl.escrow_idx = escrow_platform_tbl.escrow_idx
         and escrow_item_tbl.escrow_status ='FC'
-
