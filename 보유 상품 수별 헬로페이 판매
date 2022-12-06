@@ -1,0 +1,24 @@
+select 
+left(a.regdate, 8) as date_reg,
+a.escrow_idx, 
+a.escrow_seller_idx,
+cnt.member_item_count, 
+a.escrow_buyer_idx, 
+b.escrow_item_idx, 
+b.item_price, 
+a.escrow_payment_method, 
+if(transaction_tbl.item_category_id is not null, transaction_tbl.item_category_id,(select item.item_category_id from item_tbl as item where item.item_idx = b.item_idx)) as item_category_id,
+b.escrow_status
+
+from 
+escrow_tbl as a left join member_count_tbl as cnt on a.escrow_seller_idx = cnt.member_idx,
+escrow_item_tbl b left join (
+            select aaa.item_idx, aaa.item_category_id
+            from hellomarket_analytics.transaction_item_tbl aaa
+            where aaa.transaction_date >= DATE_FORMAT(DATE_SUB(NOW(),INTERVAL 15 month), '%Y%m01000000')
+            group by aaa.item_idx
+            ) transaction_tbl on b.item_idx = transaction_tbl.item_idx
+
+where a.escrow_idx = b.escrow_idx
+and b.escrow_status = 'FC'
+and a.editdate >= date_format(DATE_SUB(NOW(),INTERVAL 15 month), '%Y%m01000000')
