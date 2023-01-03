@@ -1,0 +1,46 @@
+/* heavy_listers_over30_byPcategory */
+
+with heavy_seller_list as
+(
+select 
+    left(a.item_category_id, 3) as p_category, 
+    a.member_idx, 
+    count(distinct a.item_idx) as item_cnt, 
+    max(a.editdate) as last_edit_date
+
+    from item_tbl a left join member_tbl b using(member_idx)
+
+    where 
+    a.item_sell_state = '01' 
+    and a.item_valid = '01'
+    and left(a.item_category_id, 3) in ('HAA', 'HAB', 'HAC', 'HBB', 'HBC', 'HBD', 'HBE', 'HAE')
+    and b.member_dropped_out = '01'
+
+    group by 1, 2 having item_cnt >= 30
+)
+
+select
+curdate() as date_obsv,
+'by category' as type,
+heavy_seller_list.p_category as parent_category,
+if(heavy_seller_list.last_edit_date >= date_format(date_sub(curdate(), interval 30 day), '%Y%m%d000000'),'active','inactive') as activeness,
+count(distinct heavy_seller_list.member_idx) as member_cnt
+
+from heavy_seller_list
+
+group by 1, 2, 3, 4
+
+
+union all
+
+
+select
+curdate() as date_obsv,
+'by all' as type,
+'fashion all' as parent_category,
+if(heavy_seller_list.last_edit_date >= date_format(date_sub(curdate(), interval 30 day), '%Y%m%d000000'),'active','inactive') as activeness,
+count(distinct heavy_seller_list.member_idx) as member_cnt
+
+from heavy_seller_list
+
+group by 1, 2, 3, 4
