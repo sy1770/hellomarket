@@ -8,6 +8,6 @@ from transaction_item_tbl
 
 where
 transaction_date >= date_format(date_sub(curdate(), interval 49 month), '%Y%m01000000')
-and transaction_date < date_format(curdate(), '%Y%m%d000000')
+and transaction_date < date_format(curdate(), '%Y%m01000000')
 
 group by date_month, item_category_id
