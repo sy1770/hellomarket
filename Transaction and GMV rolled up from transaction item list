@@ -1,0 +1,15 @@
+SELECT 
+left(transaction_date, 8) as Date, 
+item_platform, 
+item_type, 
+sum(if((item_sell_method='03' or item_sell_method='04' or item_sell_method='05') and item_price=0, 1,0)) as H_T_C,
+count(*) as Transactions, 
+sum(item_price) as GMV
+
+FROM transaction_item_tbl
+
+WHERE 
+transaction_date >= date_format(date_sub(curdate(), interval 49 month), '%Y%m%d000000')
+and transaction_date < date_format(curdate(), '%Y%m%d000000')
+
+GROUP BY Date, item_platform, item_type
