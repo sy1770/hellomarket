@@ -1,0 +1,11 @@
+select 
+left(transaction_date, 8) as date_day, 
+left(item_category_id, 3) as p_category,
+count(*) as transactions, 
+sum(item_price) as GMV
+
+from hellomarket_analytics.transaction_item_tbl
+where 
+transaction_date >= date_format(date_sub(curdate(), interval 49 month), '%Y%m%d000000')
+and transaction_date < date_format(curdate(), '%Y%m%d000000')
+group by 1, 2
