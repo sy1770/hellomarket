@@ -1,0 +1,70 @@
+with member_agesex as (
+select 
+	distinct member_tbl.member_idx, 
+	year(now())-ifnull(ci_m.birth_year, kakao.birthyear) as age,
+    case ifnull(ci_m.sex_dream, ifnull(ci_m.sex_raon, ifnull(ci_m.iam_gender, kakao.gender)))
+    when '1' then 'M'
+    when '2' then 'F'
+    when 'male' then 'M'
+    when 'female' then 'F'
+    when 'M' then 'M'
+    when 'F' then 'F'
+    end as sex
+
+	from
+	member_tbl 
+        left join 
+		(
+		select ci.member_idx, left(ci.member_birthday, 4) as birth_year, dream.member_sex as sex_dream, raon.member_sex as sex_raon, iamport.member_gender as iam_gender
+		from member_ci_tbl ci
+			left join member_dreamsecurity_mobile_tbl dream using(member_idx, member_name)
+			left join member_raonsecure_card_tbl raon using(member_idx, member_name)
+                        left join member_ci_iamport_tbl iamport using(member_idx, member_name)
+		where ci.member_ci_type in ('10', '20')
+		) ci_m using(member_idx)
+	left join member_ci_kakaosync_tbl kakao using(member_idx)
+	
+    where 
+    member_tbl.member_dropped_out <> '11'
+    
+    group by 1 having age is not null
+), 
+hellopay as (
+select	left(escrow_item_tbl.regdate, 8) as regdate_date,
+        left(escrow_item_tbl.editdate, 8) as editdate_date,
+		escrow_item_tbl.escrow_item_idx,
+        escrow_tbl.escrow_buyer_idx,
+        if(
+			transaction_tbl.item_category_id is not null, 
+			transaction_tbl.item_category_id,
+            (select item.item_category_id from item_tbl as item where item.item_idx = escrow_item_tbl.item_idx)
+		) 
+        as item_category_id,
+        
+        escrow_item_tbl.item_price as item_price,
+        escrow_item_tbl.item_idx
+
+from 	escrow_tbl,
+        escrow_item_tbl left join (
+            select distinct aaa.item_idx, aaa.item_category_id
+            from hellomarket_analytics.transaction_item_tbl aaa
+            where aaa.transaction_date >= DATE_FORMAT(DATE_SUB(NOW(),INTERVAL 12 month), '%Y%m01000000')
+            ) transaction_tbl on escrow_item_tbl.item_idx = transaction_tbl.item_idx
+        
+
+where 	escrow_tbl.escrow_idx=escrow_item_tbl.escrow_idx
+		and escrow_item_tbl.regdate >= DATE_FORMAT(DATE_SUB(NOW(),INTERVAL 12 month), '%Y%m01000000')
+        and escrow_item_tbl.escrow_status ='FC'
+)
+
+select 
+hellopay.*,
+member_agesex.*,
+item_brand_tbl.brand_idx,
+item_brand_tbl.brand_name
+
+
+from 
+hellopay 
+	left join member_agesex on hellopay.escrow_buyer_idx = member_agesex.member_idx
+    left join hellomarket_web.item_brand_tbl using(item_idx)
