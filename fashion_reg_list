@@ -30,5 +30,4 @@ item_tbl as i
 
 where
 i.regdate >= 20220713000000
-and left(i.item_category_id, 3) in 
-('HAA', 'HAB', 'HAC', 'HBB', 'HBC', 'HBD', 'HBE', 'HAE')
+and left(i.item_category_id, 3) in ('HAA', 'HAB', 'HAC', 'HBB', 'HBC', 'HBD', 'HBE', 'HAE')
