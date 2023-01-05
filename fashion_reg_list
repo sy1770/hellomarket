@@ -1,0 +1,34 @@
+select
+i.item_idx,
+i.member_idx,
+i.item_category_id,
+i.item_price,
+i.item_platform,
+i.item_sell_state,
+i.item_used_type,
+i.item_valid,
+left(i.regdate, 8) as regdate,
+left(i.editdate, 8) as editdate,
+
+b.brand_idx,
+b.brand_name,
+
+left(t.transaction_date, 8) as trndate,
+t.transaction_item_idx,
+escrow.escrow_item_idx,
+left(escrow.editdate, 8) as FCdate
+
+
+
+from
+item_tbl as i
+    left join item_brand_tbl as b using(item_idx)
+    left join hellomarket_analytics.transaction_item_tbl as t using(item_idx)
+    left join (select e.escrow_item_idx, e.editdate, e.item_idx 
+                from escrow_item_tbl e 
+                where e.escrow_status = 'FC') as escrow using(item_idx)
+
+where
+i.regdate >= 20220713000000
+and left(i.item_category_id, 3) in 
+('HAA', 'HAB', 'HAC', 'HBB', 'HBC', 'HBD', 'HBE', 'HAE')
