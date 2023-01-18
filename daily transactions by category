@@ -1,3 +1,4 @@
+-- delete on 2023-01-18
 select 
 left(transaction_date, 8) as date_day, 
 left(item_category_id, 3) as p_category,
