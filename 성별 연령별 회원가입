@@ -1,0 +1,38 @@
+select cast(a.signup_YMD as signed) as YMD, a.platform, a.sex, a.age, left(a.age/10,1) as age_group, count(distinct a.member_idx) as member_cnt
+-- tableau에서 증분 처리를 위해 signup_YMD를 숫자로 변환
+from
+	(
+	select 
+	member_tbl.member_idx, 
+        left(member_tbl.regdate, 8) as signup_YMD,
+        plfm.member_platform_type platform,
+	year(now())-ifnull(ci_m.birth_year, kakao.birthyear) as age,
+    case ifnull(ci_m.sex_dream, ifnull(ci_m.sex_raon, ifnull(ci_m.iam_gender, kakao.gender)))
+    when '1' then 'M'
+    when '2' then 'F'
+    when 'male' then 'M'
+    when 'female' then 'F'
+    when 'M' then 'M'
+    when 'F' then 'F'
+    end as sex
+
+	from
+	member_tbl 
+            left join 
+		(
+		select ci.member_idx, left(ci.member_birthday, 4) as birth_year, dream.member_sex as sex_dream, raon.member_sex as sex_raon, iamport.member_gender as iam_gender
+		from member_ci_tbl ci
+			left join member_dreamsecurity_mobile_tbl dream using(member_idx, member_name)
+			left join member_raonsecure_card_tbl raon using(member_idx, member_name)
+                        left join member_ci_iamport_tbl iamport using(member_idx, member_name)
+		where ci.member_ci_type in ('10', '20')
+		) ci_m using(member_idx)
+            left join member_ci_kakaosync_tbl kakao using(member_idx)
+            left join member_platform_tbl plfm using(member_idx)
+	
+    where 
+    -- member_tbl.regdate >= DATE_FORMAT(DATE_SUB(NOW(),INTERVAL 1 month), '%Y%m01000000') 
+    member_tbl.regdate >= DATE_FORMAT(NOW(), '%Y%m01000000')
+    and member_tbl.regdate < DATE_FORMAT(NOW(), '%Y%m%d000000')
+    ) a
+group by 1, 2, 3, 4, 5
