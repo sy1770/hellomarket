@@ -19,8 +19,7 @@ select
 left(a.transaction_date, 6) as date_ym,
 left(a.item_category_id, 3) as p_category,
 if(b.member_idx is not null, 'heavy_lister', 'light_lister') as heavy_or_light,
-count(*),
-sum(item_price),
+count(distinct a.transaction_item_idx),
 count(distinct a.member_idx)
 
 from
