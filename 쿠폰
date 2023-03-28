@@ -1,0 +1,30 @@
+select 
+left(a.regdate, 8) as date_reg,
+left(b.editdate, 8) as date_edit,
+a.escrow_idx, 
+a.escrow_seller_idx, 
+a.escrow_buyer_idx, 
+b.escrow_item_idx, 
+b.item_price,
+b.item_title,
+a.escrow_payment_method,
+b.escrow_status,
+coupon.coupon_price,
+d.coupon_inventory_idx,
+d.coupon_title,
+d.minimum_price
+
+
+from 
+escrow_tbl a
+	left join escrow_coupon_tbl as coupon using(escrow_idx)
+    left join hellomarket_coupon_kr.coupon_issue_tbl c using(coupon_issue_idx)
+	left join hellomarket_coupon_kr.coupon_inventory_tbl d using(coupon_inventory_idx),
+
+escrow_item_tbl b
+
+where a.escrow_idx = b.escrow_idx
+and b.escrow_status not in ('PW')
+and coupon.escrow_idx is not null
+and a.regdate >= DATE_FORMAT(DATE_SUB(NOW(),INTERVAL 36 month), '%Y%m%d000000')
+and a.regdate < DATE_FORMAT(NOW(), '%Y%m%d000000')
