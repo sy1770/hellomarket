@@ -61,7 +61,7 @@ from 	escrow_tbl
                         ) ci_m using(member_idx)
                         left join member_ci_kakaosync_tbl kakao on member_tbl.member_idx = kakao.member_idx
                 ) a
-                group by 1 having a.age is not null
+                group by 1 -- having a.age is not null
             ) dd on escrow_tbl.escrow_buyer_idx = dd.member_idx
             left join escrow_coupon_tbl as coupon using(escrow_idx),
         escrow_platform_tbl,
