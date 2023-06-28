@@ -1,0 +1,19 @@
+select
+curdate() as date_reg,
+
+case 
+when mt.member_dropped_out = '01' then 'valid'
+else 'invalid'
+end as validness,
+wallet_history_type,
+sum(wallet_amount) as wallet_amount
+
+from 
+wallet_history_tbl wht 
+    left join hellomarket_web.member_tbl mt using(member_idx)
+
+where
+wht.regdate <= DATE_FORMAT(curdate(), '%Y%m%d000000')
+and wallet_history_type not in ('01', '50', '52', '53', '54', '51', '55', '91')
+
+group by 1, 2, 3
