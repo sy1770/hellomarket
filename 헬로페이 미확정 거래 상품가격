@@ -1,0 +1,23 @@
+select
+curdate(), 
+case
+when regdate < DATE_FORMAT(DATE_SUB(curdate(),INTERVAL 1 month), '%Y%m%d000000') then 'old_1month'
+else 'recent_1month'
+end as oldness,
+sum(item_price)
+
+from
+escrow_item_tbl
+
+where 
+regdate >= DATE_FORMAT(DATE_SUB(curdate(),INTERVAL 5 year), '%Y%m%d000000')
+and 
+(
+(regdate < DATE_FORMAT(curdate(), '%Y%m%d000000') 
+and escrow_status not in ('FC', 'CC', 'RC', 'PW', 'PF'))
+or
+(regdate < DATE_FORMAT(curdate(), '%Y%m%d000000') 
+and editdate > DATE_FORMAT(curdate(), '%Y%m%d000000')
+and escrow_status in ('FC', 'CC', 'RC'))
+)
+group by 1, 2
