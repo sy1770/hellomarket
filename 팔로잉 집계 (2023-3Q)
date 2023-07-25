@@ -1,0 +1,66 @@
+with 
+escrow as (
+SELECT a.escrow_buyer_idx, a.escrow_seller_idx, a.regdate, b.escrow_status
+FROM hellomarket_web.escrow_tbl as a inner join escrow_item_tbl as b on a.escrow_idx = b.escrow_idx
+where a.regdate >= 20230101000000 and a.regdate < 20230701000000
+and b.escrow_status <> 'PW'
+),
+
+follow as (
+select
+*
+from member_wish_tbl
+where regdate >= 20230101000000 and regdate < 20230701000000
+),
+
+dmg as (
+select
+a.member_idx, a.age, a.gender, a.signup_date
+from
+(
+	select
+	member_tbl.member_idx,
+	year(now())-ifnull(ci_m.birth_year, kakao.birthyear) as age,
+	case ifnull(ci_m.sex_dream, ifnull(ci_m.sex_raon, ifnull(ci_m.iam_gender, kakao.gender)))
+	when '1' then 'M'
+	when '2' then 'F'
+	when 'male' then 'M'
+	when 'female' then 'F'
+	when 'M' then 'M'
+	when 'F' then 'F'
+	end as gender,
+	left(member_tbl.regdate, 8) as signup_date,
+	member_tbl.member_nick
+
+	from
+	member_tbl 
+		left join
+		(
+			select ci.member_idx, left(ci.member_birthday, 4) as birth_year, dream.member_sex as sex_dream, raon.member_sex as sex_raon, iamport.member_gender as iam_gender
+			from member_ci_tbl ci
+					left join member_dreamsecurity_mobile_tbl dream on ci.member_idx = dream.member_idx and ci.member_ci = dream.member_ci
+					left join member_raonsecure_card_tbl raon on ci.member_idx = raon.member_idx and ci.member_ci = raon.member_ci
+					left join member_ci_iamport_tbl iamport on ci.member_idx = iamport.member_idx and ci.member_ci = iamport.member_ci
+			where ci.member_ci_type in ('10', '20') -- '10' 성인, '20' 미성년, '30' 보호자
+					and length(ci.member_ci) > 0 -- 휴면으로 빠진 회원 정보 제외
+		) ci_m using(member_idx)
+		left join member_ci_kakaosync_tbl kakao on member_tbl.member_idx = kakao.member_idx
+) a
+group by 1 -- having a.age is not null
+)
+
+select
+follow.member_idx,
+
+dmg.age,
+dmg.gender,
+dmg.signup_date,
+
+escrow.escrow_buyer_idx,
+escrow.escrow_seller_idx,
+escrow.regdate,
+escrow.escrow_status
+
+from follow 
+	left join escrow on follow.member_idx = escrow.escrow_buyer_idx
+	left join dmg on follow.member_idx = dmg.member_idx
