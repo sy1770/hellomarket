@@ -51,6 +51,8 @@ group by 1 -- having a.age is not null
 
 select
 follow.member_idx,
+follow.target_member_idx,
+left(follow.regdate, 8) as following_date,
 
 dmg.age,
 dmg.gender,
