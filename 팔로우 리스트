@@ -1,0 +1,41 @@
+with member_info as (
+select 
+	distinct member_tbl.member_idx, 
+	year(now())-ifnull(ci_m.birth_year, kakao.birthyear) as age,
+    case ifnull(ci_m.sex_dream, ifnull(ci_m.sex_raon, ifnull(ci_m.iam_gender, kakao.gender)))
+    when '1' then 'M'
+    when '2' then 'F'
+    when 'male' then 'M'
+    when 'female' then 'F'
+    when 'M' then 'M'
+    when 'F' then 'F'
+    end as gender
+
+	from
+	member_tbl 
+        left join 
+		(
+		select ci.member_idx, left(ci.member_birthday, 4) as birth_year, dream.member_sex as sex_dream, raon.member_sex as sex_raon, iamport.member_gender as iam_gender
+		from member_ci_tbl ci
+			left join member_dreamsecurity_mobile_tbl dream using(member_idx, member_name)
+			left join member_raonsecure_card_tbl raon using(member_idx, member_name)
+                        left join member_ci_iamport_tbl iamport using(member_idx, member_name)
+		where ci.member_ci_type in ('10', '20')
+		) ci_m using(member_idx)
+	left join member_ci_kakaosync_tbl kakao using(member_idx)
+	
+    -- where member_tbl.member_dropped_out <> '11'
+    
+    group by 1 having age is not null
+),
+
+follow as (
+select *
+from hellomarket_web.member_wish_tbl
+where regdate >= DATE_FORMAT(DATE_SUB(NOW(), INTERVAL 24 month), '%Y%m%d000000')
+)
+
+select 
+f.*, i.age, i.gender
+from 
+follow as f left join member_info as i on f.member_idx = i.member_idx
