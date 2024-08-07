@@ -1,0 +1,44 @@
+SELECT 
+a.seller_item_idx,
+a.seller_idx,
+a.created_time as item_created_time,
+a.updated_time as item_updated_time,
+
+s.created_time as seller_created_time,
+s.updated_time as seller_updated_time,
+
+s.member_idx,
+s.name,
+s.status,
+brand.resell_brand_idx, 
+brand.korean, 
+a.resell_category_idx, 
+c.name1, 
+c.name2, 
+c.name3, 
+a.level_code, 
+a.price,
+b.name as brand_name_by_hand,
+b.brand_idx as overall_brand_idx,
+o.brand_korean as overall_brand_name,
+
+a.type,
+brand.grade,
+a.size_code,
+
+sc.division,
+sc.type as source_type,
+sc.store
+
+FROM hellomarket_resell.seller_item_tbl as a
+    left join hellomarket_resell.seller_item_brand_tbl as b on a.seller_item_idx = b.seller_item_idx
+    left join hellomarket_web.brand_tbl as o on b.brand_idx = o.brand_idx
+    left join hellomarket_resell.resell_brand_tbl as brand on b.brand_idx = brand.brand_idx and brand.valid = '01'
+    left join hellomarket_resell.seller_tbl as s on a.seller_idx = s.seller_idx
+    left join hellomarket_resell.seller_source_tbl as sc on sc.seller_idx = s.seller_idx
+    left join
+        (select first.name as name1, second.name as name2, third.name as name3, third.resell_category_idx
+        from hellomarket_resell.resell_category_tbl as third 
+            left join hellomarket_resell.resell_category_tbl as second on third.parent_idx = second.resell_category_idx
+            left join hellomarket_resell.resell_category_tbl as first on second.parent_idx = first.resell_category_idx
+	) as c on a.resell_category_idx = c.resell_category_idx
