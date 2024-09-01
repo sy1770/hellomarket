@@ -1,0 +1,29 @@
+
+with uniqid as 
+(
+  select header_application_uniqid
+  from api_log 
+  where td_time_range(time, '2024-07-09', '2024-08-10', 'KST')
+    and header_application_memberid = '6038527'
+  group by 1
+)
+
+
+
+
+
+select td_time_format(time, 'yyyy-MM-dd HH:mm:ss', 'KST') as time, address   --, IF(header_application_type = 'basic', header_user_agent, NULL) as agent
+from api_log, uniqid
+where 
+api_log.header_application_uniqid = uniqid.header_application_uniqid
+ and td_time_range(time, '2024-07-09', '2024-08-10', 'KST')
+ -- /*
+ and CONCAT(SPLIT_PART(address, '.', 1),'.',SPLIT_PART(address, '.', 2)) not in 
+  ('115.161','122.202','223.38','223.32','122.32','211.234','121.190','223.39','223.33','223.62','203.226','175.202','223.57','175.223','175.252','210.125','211.246','110.70','39.7', '114.200','117.111','211.36','106.102','61.43','125.188','211.234','172.16','172.17','172.18','172.19','172.20','172.21','172.22','172.23','172.24','172.25','172.26','172.27','172.28','172.29','172.30','172.31','192.168')
+  and SPLIT_PART(address, '.', 1) not in ('10')
+  and CONCAT(SPLIT_PART(address, '.', 1),'.',SPLIT_PART(address, '.', 2), '.', SPLIT_PART(address, '.', 3)) not in 
+  ('118.235.8', '118.235.9')
+  and address <> '127.0.0.1'
+ -- */
+group by 1,2 --,3
+order by 1,2 --,3
