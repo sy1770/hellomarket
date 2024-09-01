@@ -1,0 +1,274 @@
+-- 모든 플랫폼에서 가입한 회원 대상, 페이징과 조회도 모든 플랫폼 집계
+with 
+-- 회원가입 목록
+signup_list as (
+  select
+  snp.time as signup_time,
+  date_parse(td_time_format(snp.time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as signup_timestamp,
+  signup.member_idx,
+  case signup.member_platform_type
+    when '01' then 'iOS'
+    when '02' then 'Android'
+    when '10' then 'Web'
+    when '11' then 'mWeb'
+  end as platform,
+  if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_gender', dmg.sex) as gender,
+  -- coalesce(dmg.sex, 'null_gender') as gender,
+  case 
+    when dmg.age < 25 then '*-24'
+    when dmg.age >= 25 and dmg.age < 35 then '25-34'
+    when dmg.age >= 35 and dmg.age < 45 then '35-44'
+    when dmg.age >= 45 and dmg.age < 55 then '45-54'
+    when dmg.age >= 55 then '55-*'
+    else 'null_age'
+  end as age_band
+  
+from
+  hellomarket_3.member_signup_platform_tbl as signup
+    left join hellomarket_3.member_signup_tbl as snp on snp.member_idx = signup.member_idx
+    left join hellomarket.members_demography as dmg on signup.member_idx = dmg.member_idx
+
+where
+  TD_TIME_RANGE(snp.time, -- '2023-01-09', '2023-07-25', 
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-8d'), 'KST'), -- -8d
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-7d'), 'KST'), -- -1d
+    'KST')
+  -- and signup.member_platform_type in ('01', '02') -- 앱에서 가입한 회원 대상
+),
+ -- Android는 21.8.4(23년1월4일)부터 한꺼번에 두 페이지 나오는 버그 수정
+
+
+/*========== 검색 ===========*/
+
+-- 키워드 있는 검색 기록들
+keyword_search as (
+  select
+    time as search_time,
+    date_parse(td_time_format(time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as search_timestamp,
+    header_application_memberid as member_idx,
+    param_q
+  from
+    api_log
+  where
+    td_time_range(api_log.time, -- '2023-01-09', '2023-08-01',
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-8d','KST'),'KST'), -- -8d
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-0d','KST'),'KST'), -- -0d
+    'KST')
+    and split_part(header_application_client_id, '-',1) = 'hellomarket'
+    -- and header_application_type = 'basic' -- 앱에서만 발생
+    and (url = '/search' or url = '/search/items')
+    and (param_page='1' or param_page is null)
+    and param_memberidx is NULL  -- 중요!! 상품 상세 진입해서 판매자 상품 불러올 때만 이 값이 들어간다 
+    and param_q is not null
+),
+
+-- 키워드 있는 검색 기록들 + 신규회원 조건(7일 이내)
+keyword_by_new_member as (
+  select 
+  td_time_format(a.search_time, 'yyyy-MM-dd HH:mm:ss', 'KST') search_datetime,
+  b.signup_timestamp,
+  b.signup_time,
+  -- date_diff('minute', b.signup_timestamp, a.search_timestamp) as time_gap,
+  a.param_q,
+  b.member_idx,
+  b.age_band,
+  b.gender,
+  b.platform
+
+  from keyword_search a left join signup_list b on a.member_idx = b.member_idx
+  
+  where 
+  b.member_idx is not null
+  and date_diff('day', b.signup_timestamp, a.search_timestamp) < 7
+),
+
+-- + 특정 키워드만 걸러내기1 (브랜드 포함한 키워드)
+popular_filter as (
+  select
+    a.param_q,
+    if(LENGTH(b.popular_keyword)=1, -- 특정 키워드가 포함된 검색어 중에서 아래의 경우에 따라 각각 별도 처리
+      if(CONTAINS(split(a.param_q, ' '), b.popular_keyword), -- 1 특정 키워드가 한 글자인 경우는 그 글자가 띄어쓰기 되어 있으면 유효
+        b.keyword_type, 
+        null), 
+      if(LENGTH(b.popular_keyword)=2,  -- 2 특정 키워드가 두 글자인 경우는 그 단어가 띄어쓰기 되어 있거나 맨 앞이나 맨 뒤에 나타나면 유효
+        if(SUBSTR(a.param_q, 1, 2) = b.popular_keyword or CONTAINS(split(a.param_q, ' '), b.popular_keyword) or SUBSTR(a.param_q, -2, 2) = b.popular_keyword, 
+          b.keyword_type, 
+          null), 
+        b.keyword_type)) as keyword_type  -- 3 세 글자 이상은 특정 키워드가 그대로 포함되면 무조건 유효
+    
+  from (select distinct trim(param_q) as param_q from keyword_by_new_member) a left join popular_keyword b on a.param_q like concat('%',b.popular_keyword,'%')
+),
+
+/*
+-- + 특정 키워드만 걸러내기2 (브랜드 아닌 키워드)
+popular_filter_no_brand as (
+  select
+    a.param_q,
+    if(LENGTH(b.popular_keyword)=1, 
+      if(CONTAINS(split(a.param_q, ' '), b.popular_keyword), -- 1) 특정 키워드가 한 글자인 경우는 그 글자가 띄어쓰기 되어 있으면 유효
+        b.popular_keyword, 
+        null), 
+      if(LENGTH(b.popular_keyword)=2,  -- 2) 특정 키워드가 두 글자인 경우는 그 단어가 띄어쓰기 되어 있거나 맨 앞에 나타나면 유효
+        if(SUBSTR(a.param_q, 1, 2) = b.popular_keyword or CONTAINS(split(a.param_q, ' '), b.popular_keyword), 
+          b.popular_keyword, 
+          null), 
+        b.popular_keyword)) as keyword_in_popular  -- 3) 세 글자 이상은 특정 키워드가 그대로 포함되면 무조건 유효
+  from (select distinct trim(param_q) as param_q from keyword_by_new_member) a 
+    left join (select popular_keyword from popular_keyword where keyword_type = 'col_2') b on a.param_q like concat('%',b.popular_keyword,'%')
+),
+*/
+
+/*========== 조회 ===========*/
+
+-- 검색 결과의 상품 조회 기록들
+keyword_search_view as (
+  select
+    time as view_time,
+    date_parse(td_time_format(time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as view_timestamp,
+    header_application_memberid as member_idx,
+    param_keyword,
+    url
+  from
+    api_log
+  where
+    td_time_range(api_log.time,  -- '2023-01-09', '2023-08-01',
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-8d','KST'),'KST'), -- -8d
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-0d','KST'),'KST'), -- -0d
+    'KST')
+    and split_part(header_application_client_id, '-',1) = 'hellomarket'
+    -- and header_application_type = 'basic' 
+    and regexp_like(url, '^/item/\d{1,}$') and method = 'GET'
+    and (param_view_path = 'search_list' or param_view_location = 'search_result')
+    and LENGTH(param_keyword) > 0
+),
+
+-- 검색 결과의 상품 조회 기록들 + 신규회원 조건(7일 이내)
+keyword_by_new_member_view as (
+  select 
+  td_time_format(a.view_time, 'yyyy-MM-dd HH:mm:ss', 'KST') view_datetime,
+  b.signup_timestamp,
+  -- date_diff('minute', b.signup_timestamp, a.view_timestamp) as time_gap,
+  a.param_keyword,
+  b.member_idx,
+  b.age_band,
+  b.gender,
+  a.url
+
+  from keyword_search_view a left join signup_list b on a.member_idx = b.member_idx
+  
+  where 
+  b.member_idx is not null
+  and date_diff('day', b.signup_timestamp, a.view_timestamp) < 7
+),
+
+-- 검색 목록 + 해당 검색어로 상품조회한 목록 연결
+search_view_list as (
+select
+  a.member_idx,
+  -- if(cast(a.member_idx as int)%2=0, 'A-even', 'B-odd') 
+  'non_AB' as ab_test_mark,
+  a.signup_time,
+  a.age_band,
+  a.gender,
+  a.platform,  -- 가입 플랫폼
+  a.param_q,
+  b.keyword_type,
+  c.url
+
+from keyword_by_new_member a 
+  left join popular_filter b on a.param_q = b.param_q  -- 특정 키워드 여부 판단 연결
+  left join keyword_by_new_member_view c on a.member_idx = c.member_idx and a.param_q = c.param_keyword  -- 검색과 해당 검색어결과조회 연결
+), 
+
+-- 가입 집계
+signup_cnt as (
+  select 
+  td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date, 
+  platform as signup_platform, 
+  gender, 
+  age_band, 
+  -- if(cast(member_idx as int)%2=0, 'A-even', 'B-odd') as ab_test_mark,
+  'non_AB' as ab_test_mark, -- AB 테스트 끝났기 때문에.
+  count(distinct member_idx) as signup_cnt
+  from signup_list
+  group by 1, 2, 3, 4, 5
+),
+
+-- 회원별 조회 집계
+view_cnt_by_group as (
+  select
+  signup_date,
+  signup_platform,
+  gender, 
+  age_band,
+  ab_test_mark,
+  sum(view_cnt) as search_view_cnt,
+  sum(view_cnt_popular_keyword) as search_view_cnt_popular_keyword
+
+  from
+  (
+    select
+    td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date,
+    platform as signup_platform,
+    gender, 
+    age_band, 
+    member_idx,
+    ab_test_mark,
+    count(distinct url) as view_cnt,
+    count(distinct if(keyword_type is not null, url, null)) as view_cnt_popular_keyword
+    from
+    search_view_list
+    group by 1, 2, 3, 4, 5, 6
+  )
+
+  group by 1, 2, 3, 4, 5
+),
+
+
+-- 검색 및 조회 집계
+search_view_cnt as (
+  select
+  td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date,
+  platform as signup_platform,
+  gender, 
+  age_band,
+  ab_test_mark,
+  count(distinct member_idx) as search_member_cnt,
+  count(distinct if(url is not null, member_idx, null)) as search_view_member_cnt,
+  count(distinct if(keyword_type is not null, member_idx, null)) as popular_search_member_cnt,
+  count(distinct if(keyword_type is not null and url is not null, member_idx, null)) as popular_search_view_member_cnt,
+  count(distinct if(keyword_type='brand', member_idx, null)) as popular_search_member_cnt_brand,
+  count(distinct if(keyword_type='brand' and url is not null, member_idx, null)) as popular_search_view_member_cnt_brand
+  from
+  search_view_list
+  group by 1, 2, 3, 4, 5
+)
+
+select
+a.signup_date,
+a.signup_platform,
+a.gender,
+a.age_band,
+a.ab_test_mark,
+a.signup_cnt,
+b.search_member_cnt,
+b.popular_search_member_cnt,
+b.search_view_member_cnt,
+b.popular_search_view_member_cnt,
+b.popular_search_member_cnt_brand,
+b.popular_search_view_member_cnt_brand,
+
+c.search_view_cnt,
+c.search_view_cnt_popular_keyword
+
+from signup_cnt as a 
+  left join search_view_cnt as b on a.signup_date = b.signup_date 
+    and a.signup_platform = b.signup_platform 
+    and a.gender = b.gender 
+    and a.age_band = b.age_band
+    and a.ab_test_mark = b.ab_test_mark
+  left join view_cnt_by_group as c on a.signup_date = c.signup_date 
+    and a.signup_platform = c.signup_platform 
+    and a.gender = c.gender 
+    and a.age_band = c.age_band
+    and a.ab_test_mark = c.ab_test_mark
