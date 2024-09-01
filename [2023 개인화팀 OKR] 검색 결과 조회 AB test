@@ -1,0 +1,269 @@
+-- 검색 --> 조회까지 소요 시간 별도로 제한 없음. 모두 해당일에 실행하면 ok
+-- 카테고리 검색, 키워드 검색 구분
+-- 플랫폼은 앱, 웹 두 종류로 구분
+-- 검색 시행한 회원이 (키워드 검색인 경우에도 키워드로 엮을 필요 없이) 같은 종류(카테고리 or 키워드)의 검색 결과로 상품을 조회했는지 여부만 체크 
+
+
+with
+search_and_view_log as (
+  select
+    time,
+    header_application_type,
+    case header_application_type when 'basic' then 'apps' else 'webs' end as platform_type,
+    header_application_memberid as member_idx,
+    url,
+    param_q,
+    param_category,
+    param_categoryid,
+    param_view_path,
+    param_view_location,
+    param_list_type,
+    param_keyword,
+    if(header_application_type in ('web', 'mobile') and time < 1689652800, 'invalid', 'valid') as validness
+
+  from 
+    api_log
+
+  where
+    td_time_range(api_log.time, -- '2023-01-09', '2023-07-23',
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'), -- -8d
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-0d','KST'),'KST'), -- -0d
+    'KST')
+    and split_part(header_application_client_id, '-',1) = 'hellomarket'
+    and regexp_like(url, '^/item/\d{1,}$|^/search/items$|^/search$')
+    and method = 'GET'
+    and param_memberidx is NULL  -- 중요!! 상품 상세 진입해서 판매자 상품 불러올 때만 이 값이 들어간다
+    and (param_page='1'  or param_page is null)
+    and header_application_memberid > '0'
+),
+
+log_with_member_info as (
+  select
+  a.*,
+  if(cast(a.member_idx as int)%2=0, 'B-even_rec', 'A-odd_new') as ab_test_mark,
+  if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_gender', dmg.sex) as gender,
+  case 
+    when dmg.age < 25 then '*-24'
+    when dmg.age >= 25 and dmg.age < 35 then '25-34'
+    when dmg.age >= 35 and dmg.age < 45 then '35-44'
+    when dmg.age >= 45 and dmg.age < 55 then '45-54'
+    when dmg.age >= 55 then '55-*'
+    else 'null_age'
+  end as age_band
+
+  from
+  search_and_view_log a left join hellomarket.members_demography as dmg on a.member_idx = dmg.member_idx
+
+  where
+  a.validness = 'valid'
+),
+
+
+-- A1 카테고리 검색: 날짜 및 (중복제거)회원 명단
+search_category as (
+  select
+    td_time_format(time, 'yyyy-MM-dd', 'KST') as search_date,
+    platform_type,
+    gender,
+    age_band,
+    ab_test_mark,
+    count(distinct member_idx) as search_category_cnt
+  from
+    log_with_member_info
+  where
+    (url = '/search' or url = '/search/items')
+    and param_q is null -- 카테고리 검색 식별 조건 1
+    and (param_category is not null or param_categoryid is not null) -- 카테고리 검색 식별 조건 2
+  group by 1, 2, 3, 4, 5
+
+  union all
+
+  select
+    td_time_format(time, 'yyyy-MM-dd', 'KST') as search_date,
+    'all' as platform_type,
+    gender,
+    age_band,
+    ab_test_mark,
+    count(distinct member_idx) as search_category_cnt
+  from
+    log_with_member_info
+  where
+    (url = '/search' or url = '/search/items')
+    and param_q is null -- 카테고리 검색 식별 조건 1
+    and (param_category is not null or param_categoryid is not null) -- 카테고리 검색 식별 조건 2
+  group by 1, 2, 3, 4, 5
+),
+
+
+-- B1 키워드 검색: 날짜 및 (중복제거)회원 명단
+search_keyword as (
+  select
+    td_time_format(time, 'yyyy-MM-dd', 'KST') as search_date,
+    platform_type,
+    gender,
+    age_band,
+    ab_test_mark,
+    count(distinct member_idx) as search_keyword_cnt
+  from
+    log_with_member_info
+  where
+    (url = '/search' or url = '/search/items')
+    and param_q is not null -- 키워드 검색 식별 조건
+  group by 1, 2, 3, 4, 5
+
+  union all
+
+  select
+    td_time_format(time, 'yyyy-MM-dd', 'KST') as search_date,
+    'all' as platform_type,
+    gender,
+    age_band,
+    ab_test_mark,
+    count(distinct member_idx) as search_keyword_cnt
+  from
+    log_with_member_info
+  where
+    (url = '/search' or url = '/search/items')
+    and param_q is not null -- 키워드 검색 식별 조건
+  group by 1, 2, 3, 4, 5
+),
+
+
+-- A2 카테고리 검색 후 상품 조회
+view_category as (
+  select
+    aa.view_date,
+    aa.platform_type,
+    aa.gender,
+    aa.age_band,
+    aa.ab_test_mark,
+    count(distinct aa.member_idx) as view_category_cnt,
+    sum(aa.category_view_per_member) as sum_view_category_cnt
+  from(
+    select
+      td_time_format(time, 'yyyy-MM-dd', 'KST') as view_date,
+      platform_type,
+      gender,
+      age_band,
+      ab_test_mark,
+      member_idx,
+      count(distinct url)  as category_view_per_member
+    from
+      log_with_member_info
+    where
+      regexp_like(url, '^/item/\d{1,}$')
+      and (param_view_path = 'search_list' or (param_view_location = 'search_result' and param_list_type = 'category_search'))
+      and param_keyword is null
+    group by 1, 2, 3, 4, 5, 6
+
+    union all
+
+    select
+      td_time_format(time, 'yyyy-MM-dd', 'KST') as view_date,
+      'all' as platform_type,
+      gender,
+      age_band,
+      ab_test_mark,
+      member_idx,
+      count(distinct url) as category_view_per_member
+    from
+      log_with_member_info
+    where
+      regexp_like(url, '^/item/\d{1,}$')
+      and (param_view_path = 'search_list' or (param_view_location = 'search_result' and param_list_type = 'category_search'))
+      and param_keyword is null
+    group by 1, 2, 3, 4, 5, 6
+  ) as aa
+group by 1, 2, 3, 4, 5
+),
+
+
+-- B2 키워드 검색 후 상품 조회
+view_keyword as (
+  select
+    bb.view_date,
+    bb.platform_type,
+    bb.gender,
+    bb.age_band,
+    bb.ab_test_mark,
+    count(distinct bb.member_idx) as view_keyword_cnt,
+    sum(bb.keyword_view_per_member) as sum_view_keyword_cnt
+  from (
+    select
+        td_time_format(time, 'yyyy-MM-dd', 'KST') as view_date,
+        platform_type,
+        gender,
+        age_band,
+        ab_test_mark,
+        member_idx,
+        count(distinct url) as keyword_view_per_member -- view_keyword_cnt
+      from
+        log_with_member_info
+      where
+        regexp_like(url, '^/item/\d{1,}$')
+        and (param_view_path = 'search_list' or (param_view_location = 'search_result' and param_list_type = 'keyword_search'))
+        and LENGTH(param_keyword) > 0
+      group by 1, 2, 3, 4, 5, 6
+
+      union all
+
+      select
+        td_time_format(time, 'yyyy-MM-dd', 'KST') as view_date,
+        'all' as platform_type,
+        gender,
+        age_band,
+        ab_test_mark,
+        member_idx,
+        count(distinct url) as keyword_view_per_member 
+      from
+        log_with_member_info
+      where
+        regexp_like(url, '^/item/\d{1,}$')
+        and (param_view_path = 'search_list' or (param_view_location = 'search_result' and param_list_type = 'keyword_search'))
+        and LENGTH(param_keyword) > 0
+      group by 1, 2, 3, 4, 5, 6
+  ) as bb
+  group by 1, 2, 3, 4, 5 
+)
+
+
+select
+  a.search_date as td_date,
+  a.platform_type, 
+  a.gender,
+  a.age_band,
+  a.ab_test_mark,
+  'category_search' as search_type,
+  a.search_category_cnt as search_member_cnt,
+  b.view_category_cnt as view_member_cnt,
+  b.sum_view_category_cnt as sum_viewed_items
+
+from
+search_category as a left join view_category as b
+  on a.search_date = b.view_date 
+  and a.platform_type = b.platform_type 
+  and a.gender = b.gender 
+  and a.age_band = b.age_band 
+  and a.ab_test_mark = b.ab_test_mark
+
+union all
+
+select
+  a.search_date as td_date,
+  a.platform_type, 
+  a.gender,
+  a.age_band,
+  a.ab_test_mark,
+  'keyword_search' as search_type,
+  a.search_keyword_cnt as search_member_cnt,
+  b.view_keyword_cnt as view_member_cnt,
+  b.sum_view_keyword_cnt as sum_viewed_items
+
+from
+search_keyword as a left join view_keyword as b
+  on a.search_date = b.view_date 
+  and a.platform_type = b.platform_type 
+  and a.gender = b.gender 
+  and a.age_band = b.age_band 
+  and a.ab_test_mark = b.ab_test_mark
+
