@@ -1,0 +1,174 @@
+SELECT retention_record.signup_date, retention_record.retention_type, retention_record.visit_member_count, signup_record.signup_member_count
+from
+(
+SELECT 
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST') AS signup_date,
+  '7days_retention' as retention_type, 
+  COUNT(DISTINCT header_application_memberid) AS visit_member_count
+  
+FROM
+  hellomarket.api_log as api_log, hellomarket_3.member_signup_tbl as signup_log
+
+
+WHERE
+  TD_TIME_RANGE(api_log.time,
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-7d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'),'KST')
+  AND
+  TD_TIME_RANGE(signup_log.time,
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-8d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-7d','KST'),'KST'))
+    
+  AND
+  api_log.header_application_memberid= signup_log.member_idx
+  
+  
+GROUP BY
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST')
+) as retention_record
+LEFT JOIN 
+(
+SELECT 
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST') AS signup_date,
+  COUNT(DISTINCT signup_log.member_idx) as signup_member_count
+from 
+  hellomarket_3.member_signup_tbl as signup_log
+where 
+  TD_TIME_RANGE(signup_log.time,
+  TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-8d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-7d','KST'),'KST'))
+group by 
+TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST')
+) as signup_record 
+on retention_record.signup_date=signup_record.signup_date
+
+UNION
+
+
+SELECT retention_record.signup_date, retention_record.retention_type, retention_record.visit_member_count, signup_record.signup_member_count
+FROM
+(
+SELECT 
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST') AS signup_date,
+  '1days_retention' as retention_type, 
+  COUNT(DISTINCT header_application_memberid) AS visit_member_count
+  
+FROM
+  api_log as api_log, hellomarket_3.member_signup_tbl as signup_log
+WHERE
+    TD_TIME_RANGE(api_log.time,
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'),'KST')
+  AND
+  TD_TIME_RANGE(signup_log.time,
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-2d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'))
+  AND
+  api_log.header_application_memberid= signup_log.member_idx
+GROUP BY
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST')
+) as retention_record 
+LEFT JOIN 
+(
+SELECT 
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST') AS signup_date,
+  COUNT(DISTINCT signup_log.member_idx) as signup_member_count
+from 
+  hellomarket_3.member_signup_tbl as signup_log
+where 
+  TD_TIME_RANGE(signup_log.time,
+  TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-2d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'))
+group by 
+TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST')
+) as signup_record 
+on retention_record.signup_date=signup_record.signup_date
+
+UNION
+
+SELECT retention_record.signup_date, retention_record.retention_type, retention_record.visit_member_count, signup_record.signup_member_count
+from
+(
+SELECT 
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST') AS signup_date,
+  '30days_retention' as retention_type, 
+  COUNT(DISTINCT header_application_memberid) AS visit_member_count
+  
+FROM
+  api_log as api_log, hellomarket_3.member_signup_tbl as signup_log
+
+
+WHERE
+  TD_TIME_RANGE(api_log.time,
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-30d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'),'KST')
+  AND
+  TD_TIME_RANGE(signup_log.time,
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-31d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-30d','KST'),'KST'))
+    
+  AND
+  api_log.header_application_memberid= signup_log.member_idx
+  
+  
+GROUP BY
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST')
+) as retention_record
+LEFT JOIN 
+(
+SELECT 
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST') AS signup_date,
+  COUNT(DISTINCT signup_log.member_idx) as signup_member_count
+from 
+  hellomarket_3.member_signup_tbl as signup_log
+where 
+  TD_TIME_RANGE(signup_log.time,
+  TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-31d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-30d','KST'),'KST'))
+group by 
+TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST')
+) as signup_record 
+on retention_record.signup_date=signup_record.signup_date
+
+UNION
+
+
+SELECT retention_record.signup_date, retention_record.retention_type, retention_record.visit_member_count, signup_record.signup_member_count
+FROM
+(
+SELECT 
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST') AS signup_date,
+  '15days_retention' as retention_type, 
+  COUNT(DISTINCT header_application_memberid) AS visit_member_count
+  
+FROM
+  api_log as api_log, hellomarket_3.member_signup_tbl as signup_log
+WHERE
+    TD_TIME_RANGE(api_log.time,
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-15d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'),'KST')
+  AND
+  TD_TIME_RANGE(signup_log.time,
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-16d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-15d','KST'),'KST'))
+  AND
+  api_log.header_application_memberid= signup_log.member_idx
+GROUP BY
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST')
+) as retention_record 
+LEFT JOIN 
+(
+SELECT 
+  TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST') AS signup_date,
+  COUNT(DISTINCT signup_log.member_idx) as signup_member_count
+from 
+  hellomarket_3.member_signup_tbl as signup_log
+where 
+  TD_TIME_RANGE(signup_log.time,
+  TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-16d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-15d','KST'),'KST'))
+group by 
+TD_TIME_FORMAT(signup_log.time,'yyyy-MM-dd','KST')
+) as signup_record 
+on retention_record.signup_date=signup_record.signup_date
+
