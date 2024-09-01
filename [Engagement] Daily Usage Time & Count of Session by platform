@@ -1,0 +1,38 @@
+select 
+  tr_date, 
+  -- header_application_uniqid, 
+  platform,
+  SUM(ss_duration) as daily_usage_time, 
+  SUM(if(ss_duration>0,1,0)) as daily_session_count,
+  -- SUM(ss_duration) / SUM(if(ss_duration>0,1,0)),
+  count(distinct header_application_uniqid)
+from
+  (
+    SELECT
+      TD_TIME_FORMAT(time, 'yyyy-MM-dd', 'KST') as tr_date,
+      header_application_uniqid, 
+      platform,
+      session_id, 
+      TD_TIME_FORMAT(min(time),'yyyy-MM-dd HH:mm:ss','KST')as ss_start, 
+      min(time) as ss_start_stamp,
+      TD_TIME_FORMAT(max(time),'yyyy-MM-dd HH:mm:ss','KST')as ss_end, 
+      max(time) as ss_end_stamp,
+      DATE_DIFF('second',from_unixtime(min(time)),from_unixtime(max(time))) as ss_duration
+    FROM
+      (
+        SELECT 
+          time, 
+          header_application_uniqid,
+          TD_SESSIONIZE_WINDOW(time, 1800) over (PARTITION BY header_application_uniqid ORDER BY time) as session_id , SUBSTR(header_application_device,1,3) as platform
+        from 
+          api_log
+        WHERE 
+          TD_TIME_RANGE(time, '2022-03-01', '2022-04-01', 'KST') and header_application_type = 'basic' -- and CAST(IF(LENGTH(header_application_uniqid)>0,header_application_uniqid,'0')  as BIGINT) > 0
+         
+      ) 
+    group by TD_TIME_FORMAT(time, 'yyyy-MM-dd', 'KST'), header_application_uniqid, platform, 
+    session_id
+  )
+where ss_duration>0
+group by 1, 2 --, header_application_uniqid , platform
+order by 2, 1
