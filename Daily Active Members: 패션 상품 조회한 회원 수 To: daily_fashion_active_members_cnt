@@ -1,0 +1,238 @@
+-- 앱에서 가입한 회원 대상, 페이징과 조회도 앱에서 발생
+
+with 
+signup_list as (
+  select
+  snp.time as signup_time,
+  date_parse(td_time_format(snp.time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as signup_timestamp,
+  signup.member_idx,
+  case signup.member_platform_type
+    when '01' then 'iOS'
+    when '02' then 'Android'
+  end as platform,
+  if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_gender', dmg.sex) as gender,
+  -- coalesce(dmg.sex, 'null_gender') as gender,
+  case 
+    when dmg.age < 25 then '*-24'
+    when dmg.age >= 25 and dmg.age < 35 then '25-34'
+    when dmg.age >= 35 and dmg.age < 45 then '35-44'
+    when dmg.age >= 45 and dmg.age < 55 then '45-54'
+    when dmg.age >= 55 then '55-*'
+    else 'null_age'
+  end as age_band
+  
+from
+  hellomarket_3.member_signup_platform_tbl as signup
+    left join hellomarket_3.member_signup_tbl as snp on snp.member_idx = signup.member_idx
+    left join hellomarket.members_demography as dmg on signup.member_idx = dmg.member_idx
+
+where
+  TD_TIME_RANGE(snp.time, 
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-2d'), 'KST'), -- -365d -29d -8d  -2d
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d'), 'KST'), -- -1d -1d  -1d
+    'KST')
+  and signup.member_platform_type in ('01', '02') -- 앱에서 가입한 회원 대상
+),
+ -- Android는 21.8.4(1월4일)부터 한꺼번에 두 페이지 나오는 버그 수정
+
+home_paging as (
+  select
+    time as paging_time,
+    date_parse(td_time_format(time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as paging_timestamp,
+    header_application_memberid as member_idx,
+    url,
+    param_page
+
+  from
+    api_log
+  
+  where
+    td_time_range(api_log.time, 
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-2d','KST'),'KST'), -- -365d -29d -8d  -2d
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-0d','KST'),'KST'), -- -0d
+    'KST')
+    and split_part(header_application_client_id, '-',1) = 'hellomarket'
+    and url in ('/feeds', '/homefeeds')
+    and param_page in ('2', '3')  -- 2페이지뿐만 아니라 3페이지 호출도
+    and header_application_type = 'basic' -- 앱에서 발생한 페이징
+),
+
+home_view as (
+  select
+  time as view_time,
+  date_parse(td_time_format(time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as view_timestamp,
+  header_application_memberid as member_idx,
+  url, 
+  param_view_path
+
+  from api_log
+
+  where
+  td_time_range(api_log.time, 
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-2d','KST'),'KST'), -- -365d -29d -2d
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-0d','KST'),'KST'), -- -0d
+  'KST')
+  and split_part(header_application_client_id, '-',1) = 'hellomarket'
+  and regexp_like(url, '^/item/\d{1,}$') and method = 'GET'
+  and (param_view_path in ('etc', 'main_feed', 'recent_feed') or param_view_location = 'home_screen')
+  and header_application_type = 'basic' -- 앱에서 발생한 조회
+),
+
+-- 페이징 + 회원정보 + 유효시간 적용
+member_paging as (
+  select
+    a.paging_time,
+    a.param_page,
+    a.member_idx,
+    b.signup_time,
+    b.gender,
+    b.age_band,
+    b.platform
+
+  from
+    home_paging as a left join signup_list as b on a.member_idx = b.member_idx
+
+  where
+    date_diff('hour', b.signup_timestamp, a.paging_timestamp) < 24
+    and b.signup_time is not null
+),
+
+-- 조회 + 회원정보 + 유효시간 적용
+member_view as (
+  select
+    a.view_time,
+    a.member_idx,
+    b.signup_time,
+    b.gender,
+    b.age_band,
+    b.platform
+  from
+    home_view as a left join signup_list as b on a.member_idx = b.member_idx
+  where
+    date_diff('hour', b.signup_timestamp, a.view_timestamp) < 24
+    and b.signup_time is not null
+),
+
+-- 페이징 & 조회 (2페이지)
+member_paging2_and_view as (
+  select
+    a.member_idx,
+    a.signup_time,
+    a.gender,
+    a.age_band,
+    a.platform
+  from 
+    member_view as a inner join member_paging as b on a.member_idx = b.member_idx
+  where
+    b.param_page = '2'
+),
+
+-- 페이징 & 조회 (3페이지)
+member_paging3_and_view as (
+  select
+    a.member_idx,
+    a.signup_time,
+    a.gender,
+    a.age_band,
+    a.platform
+  from 
+  member_view as a inner join member_paging as b on a.member_idx = b.member_idx
+  where
+  b.param_page = '3'
+),
+
+-- 가입 집계
+signup_cnt as
+(
+  select 
+  td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date, 
+  platform, 
+  gender, 
+  age_band, 
+  count(distinct member_idx) as signup_cnt
+  from signup_list
+  group by 1, 2, 3, 4
+),
+
+-- 2페이징 집계
+paging2_cnt as (
+  select 
+    td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date, 
+    platform, 
+    gender, 
+    age_band, 
+    count(distinct member_idx) as paging_cnt
+  from member_paging
+  where param_page = '2'
+  group by 1, 2, 3, 4
+),
+
+-- 3페이징 집계
+paging3_cnt as (
+  select 
+    td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date, 
+    platform, 
+    gender, 
+    age_band, 
+    count(distinct member_idx) as paging_cnt
+  from member_paging
+  where param_page = '3'
+  group by 1, 2, 3, 4
+),
+
+-- 조회 집계
+view_cnt as (
+  select 
+  td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date, 
+  platform, 
+  gender, 
+  age_band, 
+  count(distinct member_idx) as view_cnt
+  from member_view
+  group by 1, 2, 3, 4
+),
+
+-- 페이징2&조회 집계
+paging2_and_view_cnt as (
+  select 
+  td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date, 
+  platform, 
+  gender, 
+  age_band, 
+  count(distinct member_idx) as paging_and_view_cnt
+  from member_paging2_and_view
+  group by 1, 2, 3, 4
+),
+
+-- 페이징3&조회 집계
+paging3_and_view_cnt as (
+  select 
+  td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date, 
+  platform, 
+  gender, 
+  age_band, 
+  count(distinct member_idx) as paging_and_view_cnt
+  from member_paging3_and_view
+  group by 1, 2, 3, 4
+)
+
+select
+a.signup_date,
+a.platform,
+a.gender,
+a.age_band,
+a.signup_cnt,
+b.paging_cnt as paging2_cnt,
+bb.paging_cnt as paging3_cnt,
+c.view_cnt,
+d.paging_and_view_cnt as paging2_and_view_cnt,
+dd.paging_and_view_cnt as paging3_and_view_cnt
+
+from
+signup_cnt as a 
+  left join paging2_cnt as b on a.signup_date = b.signup_date and a.platform = b.platform and a.gender = b.gender and a.age_band = b.age_band
+  left join paging3_cnt as bb on a.signup_date = bb.signup_date and a.platform = bb.platform and a.gender = bb.gender and a.age_band = bb.age_band
+  left join view_cnt as c on a.signup_date = c.signup_date and a.platform = c.platform and a.gender = c.gender and a.age_band = c.age_band
+  left join paging2_and_view_cnt as d on a.signup_date = d.signup_date and a.platform = d.platform and a.gender = d.gender and a.age_band = d.age_band
+  left join paging3_and_view_cnt as dd on a.signup_date = dd.signup_date and a.platform = dd.platform and a.gender = dd.gender and a.age_band = dd.age_band
+
