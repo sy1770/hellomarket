@@ -1,0 +1,157 @@
+with
+log_dmg as
+(
+  select
+    api_log.time,
+    api_log.header_application_memberid,
+    if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_sex', dmg.sex) as sex,
+    case 
+      when dmg.age < 25 then '*-24'
+      when dmg.age >= 25 and dmg.age < 35 then '25-34'
+      when dmg.age >= 35 and dmg.age < 45 then '35-44'
+      when dmg.age >= 45 and dmg.age < 55 then '45-54'
+      when dmg.age >= 55 then '55-*'
+      else 'null_age'
+    end as age_band,
+    api_log.url,
+    api_log.param_category_id,
+    api_log.method,
+    if(api_log.header_application_type = 'basic', substr(api_log.header_application_device, 1, 3), api_log.header_application_type) as platform
+    
+  from
+    api_log left join members_demography as dmg on api_log.header_application_memberid = dmg.member_idx
+  where
+    TD_TIME_RANGE(api_log.time, 
+    -- '2021-11-01',
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'), 
+    -- '2023-01-16',
+    TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'),
+    'KST')
+    and split_part(header_application_client_id, '-',1) = 'hellomarket'
+),
+
+login_cnt as
+(
+  select
+    td_time_format(TD_DATE_TRUNC('day', time, 'KST'), 'yyyy-MM-dd', 'KST') as date_day,
+    sex,
+    age_band, 
+    count(distinct header_application_memberid) as login_member_cnt
+  from
+    log_dmg
+  group by 1, 2, 3
+),
+
+allview_cnt as
+(
+  select
+    td_time_format(TD_DATE_TRUNC('day', time, 'KST'), 'yyyy-MM-dd', 'KST') as date_day, 
+    sex,
+    age_band, 
+    count(distinct header_application_memberid) as allview_member_cnt
+  from
+    log_dmg
+  where
+    regexp_like(url, '^/item/\d{1,}$')
+    and method = 'GET'
+  group by 1, 2, 3
+),
+
+fashionview_cnt as
+(
+  select
+    td_time_format(TD_DATE_TRUNC('day', time, 'KST'), 'yyyy-MM-dd', 'KST') as date_day, 
+    sex,
+    age_band, 
+    count(distinct header_application_memberid) as fashionview_member_cnt
+  from
+    log_dmg
+  where
+    regexp_like(url, '^/item/\d{1,}$')
+    and SUBSTR(param_category_id, 1, 3) in ('HAA', 'HAB',  'HAC', 'HBC', 'HBD', 'HBB') -- 'HBB', 'HAE' 제외
+    and method = 'GET'
+  group by 1, 2, 3
+),
+
+
+login_platform_cnt as
+(
+  select
+    td_time_format(TD_DATE_TRUNC('day', time, 'KST'), 'yyyy-MM-dd', 'KST') as date_day, 
+    platform,
+    sex,
+    age_band, 
+    count(distinct header_application_memberid) as login_member_cnt
+  from
+    log_dmg
+  group by 1, 2, 3, 4
+),
+
+allview_platform_cnt as
+(
+  select
+    td_time_format(TD_DATE_TRUNC('day', time, 'KST'), 'yyyy-MM-dd', 'KST') as date_day, 
+    platform,
+    sex,
+    age_band, 
+    count(distinct header_application_memberid) as allview_member_cnt
+  from
+    log_dmg
+  where
+    regexp_like(url, '^/item/\d{1,}$')
+    and method = 'GET'
+  group by 1, 2, 3, 4
+),
+
+fashionview_platform_cnt as
+(
+  select
+    td_time_format(TD_DATE_TRUNC('day', time, 'KST'), 'yyyy-MM-dd', 'KST') as date_day, 
+    platform,
+    sex,
+    age_band, 
+    count(distinct header_application_memberid) as fashionview_member_cnt
+  from
+    log_dmg
+  where
+    regexp_like(url, '^/item/\d{1,}$')
+    and SUBSTR(param_category_id, 1, 3) in ('HAA', 'HAB',  'HAC', 'HBC', 'HBD', 'HBB') 
+    and method = 'GET'
+  group by 1, 2, 3, 4
+)
+
+select
+a.date_day,
+'all' as platform_type,
+a.sex,
+a.age_band,
+a.login_member_cnt,
+c.allview_member_cnt,
+b.fashionview_member_cnt
+
+from
+login_cnt as a 
+  left join fashionview_cnt as b on a.date_day = b.date_day and a.sex = b.sex and a.age_band = b.age_band
+  left join allview_cnt as c on a.date_day = c.date_day and a.sex = c.sex and a.age_band = c.age_band
+
+
+union all
+
+select
+a.date_day,
+a.platform as platform_type,
+a.sex,
+a.age_band,
+a.login_member_cnt,
+c.allview_member_cnt,
+b.fashionview_member_cnt
+
+from
+login_platform_cnt as a 
+  left join fashionview_platform_cnt as b on a.date_day = b.date_day and a.sex = b.sex and a.age_band = b.age_band and a.platform = b.platform
+  left join allview_platform_cnt as c on a.date_day = c.date_day and a.sex = c.sex and a.age_band = c.age_band and a.platform = c.platform
+
+where
+a.platform in ('And', 'iOS', 'mobile', 'web')
+
+order by 1, 2, 3, 4
