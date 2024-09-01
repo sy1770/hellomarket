@@ -1,0 +1,49 @@
+with 
+users as (
+  select time as signup_at, member_idx
+  from hellomarket_3.member_signup_tbl
+  where TD_TIME_RANGE(time, '2023-03-01', '2023-10-01', 'KST') -- 가입일
+),
+
+events as (
+  select 
+    time as occured_at, 
+    url, 
+    split_part(url, '/', 3) as item_idx,
+    case 
+      when regexp_like(url, '^/item/\d{1,9}$') then 'item_view'
+      when regexp_like(url, '^/item/\d{1,9}/wish$') then 'item_like'
+      when (url = '/search' or url = '/search/items') then 'search_item'
+    end as event_name, 
+    header_application_memberid as member_idx
+  from hellomarket.api_log
+  where 
+    TD_TIME_RANGE(time, '2023-03-01', '2023-11-01', 'KST')  -- 활동일 ⊃ 가입일
+    and split_part(header_application_client_id, '-',1) = 'hellomarket'
+    and (
+      (regexp_like(url, '^/item/\d{1,9}$') and method='GET' and param_my_item = 'false') 
+      or (regexp_like(url, '^/item/\d{1,9}/wish$') and method='POST')
+      or ((url = '/search' or url = '/search/items') 
+        and (length(param_category)>0  or length(param_categoryid)>0 or length(param_q) > 0 or param_brandidx > '0')
+        and (param_page='1' or param_page is null) 
+        and (param_memberidx is null or not param_memberidx > '0') )
+    )
+)
+
+
+select 
+  u.member_idx, 
+  -- TD_TIME_FORMAT(u.signup_at, 'yyyy-MM-dd HH:mm:ss', 'KST') as signup_date,
+  count(distinct case when e.event_name = 'item_view' then e.item_idx else NULL end) as view_cnt, -- 조회 고유 상품 수
+  count(distinct case when e.event_name = 'item_like' then e.item_idx else NULL end) as like_cnt, -- 찜 고유 상품 수
+  count(case when e.event_name = 'search_item' then e.occured_at else NULL end) as search_cnt -- 검색 횟수 (고유 키워드 아님)
+  
+
+from 
+  users u 
+  left join events e on u.member_idx = e.member_idx
+  
+where
+  from_unixtime(e.occured_at) at time zone 'Asia/Seoul' < date_add('day', 7, from_unixtime(u.signup_at) at time zone 'Asia/Seoul')
+  
+group by 1
