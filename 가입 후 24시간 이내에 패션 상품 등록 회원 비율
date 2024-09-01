@@ -1,0 +1,110 @@
+with 
+signup_list as (
+  select
+  snp.time as signup_time,
+  date_parse(td_time_format(snp.time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as signup_timestamp,
+  signup.member_idx,
+  case signup.member_platform_type
+    when '01' then 'iOS'
+    when '02' then 'Android'
+    when '10' then 'DesktopWeb'
+    when '11' then 'MobileWeb'
+  end as platform,
+  if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_gender', dmg.sex) as gender,
+  -- coalesce(dmg.sex, 'null_gender') as gender,
+  case 
+    when dmg.age < 25 then '*-24'
+    when dmg.age >= 25 and dmg.age < 35 then '25-34'
+    when dmg.age >= 35 and dmg.age < 45 then '35-44'
+    when dmg.age >= 45 and dmg.age < 55 then '45-54'
+    when dmg.age >= 55 then '55-*'
+    else 'null_age'
+  end as age_band
+  
+from
+  hellomarket_3.member_signup_platform_tbl as signup
+    left join hellomarket_3.member_signup_tbl as snp on snp.member_idx = signup.member_idx
+    left join hellomarket.members_demography as dmg on signup.member_idx = dmg.member_idx
+
+where
+  TD_TIME_RANGE(snp.time, 
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-2d'), 'KST'), -- -8d (ex 월요일에 일주일치) | -2d (매일) 
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d'), 'KST'), -- -1d
+    'KST')
+),
+
+item_listing as (
+  select
+    time as listing_time,
+    date_parse(td_time_format(time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as listing_timestamp,
+    header_application_memberid as member_idx,
+    url
+
+  from
+    api_log
+  
+  where
+    td_time_range(api_log.time, 
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-2d','KST'),'KST'), -- -8d (ex 월요일에 일주일치) | -2d (매일)
+      TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-0d','KST'),'KST'), -- -0d
+    'KST')
+    and url = '/item' and method = 'POST'
+    and substr(param_category, 1, 3) in ('HAA', 'HAB', 'HAC', 'HBC', 'HBD')
+),
+
+-- 24시간 내 등록
+member_listing_24h as (
+  select
+    a.listing_time,
+    a.member_idx,
+    b.signup_time,
+    b.gender,
+    b.age_band,
+    b.platform
+
+  from
+    item_listing as a left join signup_list as b on a.member_idx = b.member_idx
+
+  where
+    date_diff('hour', b.signup_timestamp, a.listing_timestamp) < 24
+    and b.signup_time is not null
+),
+
+-- 가입 집계
+signup_cnt as
+(
+  select 
+  td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date, 
+  platform, 
+  gender, 
+  age_band, 
+  count(distinct member_idx) as signup_cnt
+  from signup_list
+  group by 1, 2, 3, 4
+),
+
+-- 24시간 내 등록 집계
+listing24h_cnt as (
+  select 
+    td_time_format(signup_time, 'yyyy-MM-dd', 'KST') as signup_date, 
+    platform, 
+    gender, 
+    age_band, 
+    count(distinct member_idx) as listing24h_cnt
+  from member_listing_24h
+  group by 1, 2, 3, 4
+)
+
+
+
+select
+a.signup_date,
+a.platform,
+a.gender,
+a.age_band,
+a.signup_cnt,
+b.listing24h_cnt
+
+from
+signup_cnt as a 
+  left join listing24h_cnt as b on a.signup_date = b.signup_date and a.platform = b.platform and a.gender = b.gender and a.age_band = b.age_band
