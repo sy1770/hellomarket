@@ -1,0 +1,81 @@
+with view_tbl as
+(
+select
+time,
+date_parse(td_time_format(time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as view_timestamp,
+-- td_time_format(time, 'yyyy-MM-dd', 'KST') as date_day,
+if(header_application_type = 'basic', substr(header_application_device, 1, 3), header_application_type) as platform_raw,
+
+header_application_memberid as member_idx,
+header_application_uniqid as user_uniqid,
+concat(regexp_extract(url, '\d+'),header_application_uniqid) as view_id
+
+from 
+api_log
+
+where
+-- TD_TIME_RANGE(TIME, '2022-07-01', '2023-11-05', 'KST')
+TD_TIME_RANGE(time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'), TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'), 'KST')
+and split_part(header_application_client_id, '-',1) = 'hellomarket' 
+and regexp_like(url, '^/item/\d{1,}$')
+and param_my_item ='false'
+and method = 'GET'
+and NOT header_user_agent LIKE '%bot%'
+-- and header_application_type = 'basic'  -- all platform
+and SUBSTR(api_log.param_category_id, 1, 3) in ('HAA', 'HAB', 'HBB', 'HAC', 'HBC', 'HBD', 'HAE', 'HBE') -- fashion only
+and header_application_memberid > '0' -- login member only
+),
+
+m_info_added as (
+  select
+    td_time_format(view_tbl.time, 'yyyy-MM-dd', 'KST') as date_day,
+    date_parse(td_time_format(mst.time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as signup_timestamp,
+    date_diff('day', date_parse(td_time_format(mst.time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s'), view_tbl.view_timestamp) as diff,
+    case
+      when regexp_like(platform_raw, 'And|and') then 'Android'
+      when regexp_like(platform_raw, 'iOS|ios') then 'iOS'
+      when regexp_like(platform_raw, 'mobile|mob') then 'mWeb'
+      when regexp_like(platform_raw, 'Web|web') then 'Web'
+      else 'error'
+    end as platform,
+    if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_gender', dmg.sex) as gender,
+    case 
+      when dmg.age < 25 then '*-24'
+      when dmg.age >= 25 and dmg.age < 35 then '25-34'
+      when dmg.age >= 35 and dmg.age < 45 then '35-44'
+      when dmg.age >= 45 and dmg.age < 55 then '45-54'
+      when dmg.age >= 55 then '55-*'
+      else 'null_age'
+    end as age_band,
+    view_tbl.user_uniqid,
+    view_tbl.member_idx,
+    view_tbl.view_id
+
+  from view_tbl 
+    left join members_demography as dmg on view_tbl.member_idx = dmg.member_idx
+    left join hellomarket_3.member_signup_tbl as mst on view_tbl.member_idx = mst.member_idx
+)
+
+
+select
+date_day,
+platform,
+gender,
+age_band,
+case 
+  when diff = 0 then 'signup_day'
+  when diff >= 1 and diff < 7 then 'in_1week'
+  when diff >= 7 and diff < 30 then 'in_1month'
+  when diff >= 30 and diff < 180 then 'in_6month'
+  when diff >= 180 and diff < 365 then 'in_1year'
+  when diff >= 365 then 'over_1year'
+  else 'error'
+end as since_signup,
+count(distinct view_id) as view_cnt,
+count(distinct member_idx) as viewer_idx_cnt
+
+
+from
+m_info_added 
+
+group by 1 ,2, 3, 4, 5
