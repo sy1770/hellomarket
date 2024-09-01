@@ -1,0 +1,43 @@
+with 
+users as (
+  select time as signup_at, member_idx
+  from hellomarket_3.member_signup_tbl
+  where TD_TIME_RANGE(time, '2017-07-01', '2017-08-01', 'KST') -- change the date
+),
+
+events as (
+  select 
+    time as occured_at, 
+    url, 
+    case 
+      when regexp_like(url, '^/item/\d{1,9}/wish$') then 'item_like'
+      when url = '/search/items' then 'search_items'
+    end as event_name, 
+    header_application_memberid as member_idx
+  from hellomarket.api_log
+  where 
+    TD_TIME_RANGE(time, '2017-07-01', '2017-08-08', 'KST') -- change the date
+    and ((regexp_like(url, '^/item/\d{1,9}/wish$') and method='POST') or (url = '/search/items' and param_q is not null))
+)
+
+
+select 
+  u.member_idx, 
+  TD_TIME_FORMAT(u.signup_at, 'yyyy-MM-dd HH:mm:ss', 'KST') as signup_date, 
+  count(case when e.event_name = 'item_like' then e.occured_at else NULL end) as item_likes,
+  count(case when e.event_name = 'search_items' then e.occured_at else NULL end) as searchs
+
+from 
+  users u 
+  left join events e on u.member_idx = e.member_idx 
+  
+where -- at least, occured_at is not NULL. so, there is no both 0 record in result .
+  e.occured_at  >= u.signup_at 
+  and from_unixtime(e.occured_at) at time zone 'Asia/Seoul' < date_trunc('day',(date_add('day', 8, from_unixtime(u.signup_at) at time zone 'Asia/Seoul'))) -- if 3day, 4/ if 7day, 8
+
+group by 
+  u.member_idx,
+  TD_TIME_FORMAT(u.signup_at, 'yyyy-MM-dd HH:mm:ss', 'KST')
+
+order by 
+  u.member_idx ASC
