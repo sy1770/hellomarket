@@ -1,0 +1,361 @@
+with 
+fashion_view as
+(
+  select
+    api_log.time, 
+    header_application_memberid as member_idx,
+    case 
+      when dmg.age < 25 then '*-24'
+      when dmg.age >= 25 and dmg.age < 35 then '25-34'
+      when dmg.age >= 35 and dmg.age < 45 then '35-44'
+      when dmg.age >= 45 and dmg.age < 55 then '45-54'
+      when dmg.age >= 55 then '55-*'
+      else 'null_age'
+    end as age_band, 
+    if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_sex', dmg.sex) as sex
+    -- coalesce(dmg.sex, 'null_sex') as sex
+  from
+    api_log left join members_demography as dmg on api_log.header_application_memberid = dmg.member_idx
+  where
+    TD_TIME_RANGE(api_log.time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-91d','KST'),'KST'), TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'), 'KST')
+    and header_application_type = 'basic'
+    and split_part(header_application_client_id, '-',1) = 'hellomarket'
+    and regexp_like(url, '^/item/\d{1,}$') -- normal
+    and SUBSTR(param_category_id, 1, 3) in ('HAA', 'HAB', 'HBB', 'HAC', 'HBC', 'HBD', 'HAE', 'HBE')
+),
+
+period_0 as
+(
+  select
+    distinct member_idx,
+    age_band,
+    sex
+  
+  from 
+    fashion_view
+
+  where
+   TD_TIME_RANGE(fashion_view.time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-90d','KST'),'KST'), TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'), 'KST')
+),
+
+period_1 as
+(
+  select
+    distinct member_idx,
+    age_band,
+    sex
+  
+  from 
+    fashion_view
+
+  where
+    TD_TIME_RANGE(fashion_view.time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-91d','KST'),'KST'), TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'), 'KST')
+),
+/*
+period_2 as
+(
+  select
+    distinct member_idx,
+    age_band,
+    sex
+  
+  from 
+    fashion_view
+
+  where
+    TD_TIME_RANGE(fashion_view.time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-92d','KST'),'KST'), TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-2d','KST'),'KST'), 'KST')
+),
+
+period_3 as
+(
+  select
+    distinct member_idx,
+    age_band,
+    sex
+  
+  from 
+    fashion_view
+
+  where
+    TD_TIME_RANGE(fashion_view.time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-93d','KST'),'KST'), TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-3d','KST'),'KST'), 'KST')
+),
+
+period_4 as
+(
+  select
+    distinct member_idx,
+    age_band,
+    sex
+  
+  from 
+    fashion_view
+
+  where
+    TD_TIME_RANGE(fashion_view.time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-94d','KST'),'KST'), TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-4d','KST'),'KST'), 'KST')
+),
+
+period_5 as
+(
+  select
+    distinct member_idx,
+    age_band,
+    sex
+  
+  from 
+    fashion_view
+
+  where
+    TD_TIME_RANGE(fashion_view.time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-95d','KST'),'KST'), TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-5d','KST'),'KST'), 'KST')
+),
+
+period_6 as
+(
+  select
+    distinct member_idx,
+    age_band,
+    sex
+  
+  from 
+    fashion_view
+
+  where
+    TD_TIME_RANGE(fashion_view.time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-96d','KST'),'KST'), TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-6d','KST'),'KST'), 'KST')
+),
+
+period_7 as
+(
+  select
+    distinct member_idx,
+    age_band,
+    sex
+  
+  from 
+    fashion_view
+
+  where
+    TD_TIME_RANGE(fashion_view.time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-97d','KST'),'KST'), TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-7d','KST'),'KST'), 'KST')
+),
+
+chrn_new_cnt_6 as -- Left Excluding JOIN
+(
+  select 
+    period_7.age_band,
+    period_7.sex,
+    count(distinct period_7.member_idx) as churn_n_6
+  from
+    period_7 left join period_6 on period_7.member_idx = period_6.member_idx
+  where 
+    period_6.member_idx is null
+  group by 1, 2
+),
+
+chrn_new_cnt_5 as
+(
+  select 
+    period_6.age_band,
+    period_6.sex,
+    count(distinct period_6.member_idx) as churn_n_5
+  from
+    period_6 left join period_5 on period_6.member_idx = period_5.member_idx
+  where 
+    period_5.member_idx is null
+  group by 1, 2
+),
+
+chrn_new_cnt_4 as
+(
+  select 
+    period_5.age_band,
+    period_5.sex,
+    count(distinct period_5.member_idx) as churn_n_4
+  from
+    period_5 left join period_4 on period_5.member_idx = period_4.member_idx
+  where 
+    period_4.member_idx is null
+  group by 1, 2
+),
+
+chrn_new_cnt_3 as
+(
+  select 
+    period_4.age_band,
+    period_4.sex,
+    count(distinct period_4.member_idx) as churn_n_3
+  from
+    period_4 left join period_3 on period_4.member_idx = period_3.member_idx
+  where 
+    period_3.member_idx is null
+  group by 1, 2
+),
+
+chrn_new_cnt_2 as
+(
+  select 
+    period_3.age_band,
+    period_3.sex,
+    count(distinct period_3.member_idx) as churn_n_2
+  from
+    period_3 left join period_2 on period_3.member_idx = period_2.member_idx
+  where 
+    period_2.member_idx is null
+  group by 1, 2
+),
+
+chrn_new_cnt_1 as
+(
+  select 
+    period_2.age_band,
+    period_2.sex,
+    count(distinct period_2.member_idx) as churn_n_1
+  from
+    period_2 left join period_1 on period_2.member_idx = period_1.member_idx
+  where 
+    period_1.member_idx is null
+  group by 1, 2
+),
+*/
+
+chrn_new_cnt_0 as
+(
+  select
+    period_1.age_band,
+    period_1.sex,
+    count(distinct period_1.member_idx) as churn_n_0
+  from
+    period_1 left join period_0 on period_1.member_idx = period_0.member_idx
+  where 
+    period_0.member_idx is null
+  group by 1, 2
+),
+
+period_0_cnt as
+(
+  select age_band, sex, count(distinct member_idx) as period_0_total
+  from period_0
+  group by 1, 2
+),
+
+period_1_cnt as
+(
+  select age_band, sex, count(distinct member_idx) as period_1_total
+  from period_1
+  group by 1, 2  
+)
+/*
+,
+period_2_cnt as
+(
+  select age_band, sex, count(distinct member_idx) as period_2_total
+  from period_2
+  group by 1, 2
+),
+
+period_3_cnt as
+(
+  select age_band, sex, count(distinct member_idx) as period_3_total
+  from period_3
+  group by 1, 2
+),
+
+period_4_cnt as
+(
+  select age_band, sex, count(distinct member_idx) as period_4_total
+  from period_4
+  group by 1, 2
+),
+
+period_5_cnt as
+(
+  select age_band, sex, count(distinct member_idx) as period_5_total
+  from period_5
+  group by 1, 2
+),
+
+period_6_cnt as
+(
+  select age_band, sex, count(distinct member_idx) as period_6_total
+  from period_6
+  group by 1, 2
+),
+
+period_7_cnt as
+(
+  select age_band, sex, count(distinct member_idx) as period_7_total
+  from period_7
+  group by 1, 2
+)
+
+
+SELECT
+  TD_TIME_FORMAT(TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-6d','KST'),'KST'), 'yyyy-MM-dd', 'KST') as date_observation,
+  period_7_cnt.age_band,
+  period_7_cnt.sex,
+  period_7_cnt.period_7_total as start_total,
+  chrn_new_cnt_6.churn_n_6 as churn_n
+FROM period_7_cnt left join chrn_new_cnt_6 on chrn_new_cnt_6.age_band = period_7_cnt.age_band and chrn_new_cnt_6.sex = period_7_cnt.sex
+
+union all
+
+SELECT
+  TD_TIME_FORMAT(TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-5d','KST'),'KST'), 'yyyy-MM-dd', 'KST') as date_observation,
+  period_6_cnt.age_band,
+  period_6_cnt.sex,
+  period_6_cnt.period_6_total as start_total,
+  chrn_new_cnt_5.churn_n_5 as churn_n
+FROM period_6_cnt left join chrn_new_cnt_5 on chrn_new_cnt_5.age_band = period_6_cnt.age_band and chrn_new_cnt_5.sex = period_6_cnt.sex
+  
+union all
+
+SELECT
+  TD_TIME_FORMAT(TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-4d','KST'),'KST'), 'yyyy-MM-dd', 'KST') as date_observation,
+  period_5_cnt.age_band,
+  period_5_cnt.sex,
+  period_5_cnt.period_5_total as start_total,
+  chrn_new_cnt_4.churn_n_4 as churn_n
+FROM 
+  period_5_cnt left join chrn_new_cnt_4 on chrn_new_cnt_4.age_band = period_5_cnt.age_band and chrn_new_cnt_4.sex = period_5_cnt.sex
+
+union all
+
+SELECT
+  TD_TIME_FORMAT(TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-3d','KST'),'KST'), 'yyyy-MM-dd', 'KST') as date_observation,
+  period_4_cnt.age_band,
+  period_4_cnt.sex,
+  period_4_cnt.period_4_total as start_total,
+  chrn_new_cnt_3.churn_n_3 as churn_n
+FROM 
+  period_4_cnt left join chrn_new_cnt_3 on chrn_new_cnt_3.age_band = period_4_cnt.age_band and chrn_new_cnt_3.sex = period_4_cnt.sex
+
+union all
+
+SELECT
+  TD_TIME_FORMAT(TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-2d','KST'),'KST'), 'yyyy-MM-dd', 'KST') as date_observation,
+  period_3_cnt.age_band,
+  period_3_cnt.sex,
+  period_3_cnt.period_3_total as start_total,
+  chrn_new_cnt_2.churn_n_2 as churn_n
+FROM 
+  period_3_cnt left join chrn_new_cnt_2 on chrn_new_cnt_2.age_band = period_3_cnt.age_band and chrn_new_cnt_2.sex = period_3_cnt.sex
+
+union all
+
+SELECT
+  TD_TIME_FORMAT(TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'), 'yyyy-MM-dd', 'KST') as date_observation,
+  period_2_cnt.age_band,
+  period_2_cnt.sex,
+  period_2_cnt.period_2_total as start_total,
+  chrn_new_cnt_1.churn_n_1 as churn_n
+FROM 
+  period_2_cnt left join chrn_new_cnt_1 on chrn_new_cnt_1.age_band = period_2_cnt.age_band and chrn_new_cnt_1.sex = period_2_cnt.sex
+
+union all
+*/
+
+SELECT
+  TD_TIME_FORMAT(TD_DATE_TRUNC('day', TD_SCHEDULED_TIME(),'KST'), 'yyyy-MM-dd', 'KST') as date_observation,
+  period_1_cnt.age_band,
+  period_1_cnt.sex,
+  period_1_cnt.period_1_total as start_total,
+  chrn_new_cnt_0.churn_n_0 as churn_n
+FROM 
+  period_1_cnt left join chrn_new_cnt_0 on chrn_new_cnt_0.age_band = period_1_cnt.age_band and chrn_new_cnt_0.sex = period_1_cnt.sex
