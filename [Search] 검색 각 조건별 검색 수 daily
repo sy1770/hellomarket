@@ -1,0 +1,58 @@
+select 
+td_time_format(api_log.time, 'yyyy-MM-dd', 'KST') as date_day,
+substr(header_application_device, 1, 3) as platform,
+case 
+  when dmg.age < 25 then '*-24'
+  when dmg.age >= 25 and dmg.age < 35 then '25-34'
+  when dmg.age >= 35 and dmg.age < 45 then '35-44'
+  when dmg.age >= 45 and dmg.age < 55 then '45-54'
+  when dmg.age >= 55 then '55-*'
+  else 'null_age'
+end as age_band, 
+if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_gender', dmg.sex) as gender,
+
+count(distinct IF(length(param_category)>0  or length(param_categoryid)>0, header_application_uniqid, null)) as category_user_cnt, 
+count(distinct IF(length(param_q) > 0, header_application_uniqid, null)) as keyword_user_cnt,
+count(distinct IF(param_maxprice > '0', header_application_uniqid, null)) as maxprice_user_cnt,
+count(distinct IF(param_minprice > '0', header_application_uniqid, null)) as minprice_user_cnt,
+count(distinct IF(length(param_usedtype) > 0, header_application_uniqid, null)) as param_usedtype_user_cnt,
+count(distinct IF(param_hasdeliveryfee = 'true', header_application_uniqid, null)) as free_shipping_user_cnt,
+count(distinct IF(param_mysize = 'true', header_application_uniqid, null)) as mysize_user_cnt,
+count(distinct IF(param_brandidx > '0', header_application_uniqid, null)) as brand_user_cnt,
+count(distinct IF(param_gender in ('Woman', 'Man'), header_application_uniqid, null)) as gender_filter_user_cnt,
+count(distinct IF(param_isfreecharge = 'true', header_application_uniqid, null)) as chargefree_user_cnt,
+
+count(distinct header_application_uniqid) as search_all_user_cnt,
+
+
+count( IF(length(param_category)>0  or length(param_categoryid)>0, header_application_uniqid, null)) as category_cnt, 
+count( IF(length(param_q) > 0, header_application_uniqid, null)) as keyword_cnt,
+count( IF(param_maxprice > '0', header_application_uniqid, null)) as maxprice_cnt,
+count( IF(param_minprice > '0', header_application_uniqid, null)) as minprice_cnt,
+count( IF(length(param_usedtype) > 0, header_application_uniqid, null)) as param_usedtype_cnt,
+count( IF(param_hasdeliveryfee = 'true', header_application_uniqid, null)) as free_shipping_cnt,
+count( IF(param_mysize = 'true', header_application_uniqid, null)) as mysize_cnt,
+count( IF(param_brandidx > '0', header_application_uniqid, null)) as brand_cnt,
+count( IF(param_gender in ('Woman', 'Man'), header_application_uniqid, null)) as gender_filter_cnt,
+count( IF(param_isfreecharge = 'true', header_application_uniqid, null)) as chargefree_cnt,
+
+
+count( header_application_uniqid) as search_all_cnt
+
+from api_log left join members_demography as dmg on api_log.header_application_memberid = dmg.member_idx
+
+where 
+td_time_range(api_log.time,
+-- '2022-02-01',
+  TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'),
+-- '2024-01-29',
+  TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'), 
+ 'KST')
+and (url = '/search' or url = '/search/items')
+and (param_page='1' or param_page is null)
+and ((param_memberidx is null) or not (param_memberidx > '0'))  -- param_memberidx 는 검색이 아닌 경우에 호출 (상세 지입 시, '판매자의 다른 상품' 보여줄 때)
+and header_application_type = 'basic'
+and (length(param_category)>0  or length(param_categoryid)>0 or length(param_q) > 0 or param_brandidx > '0')
+
+group by 1, 2, 3, 4
+
