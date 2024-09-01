@@ -1,0 +1,42 @@
+SELECT 
+TD_TIME_FORMAT(TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'), 'yyyy-MM-dd','KST') as agg_date,
+-- TD_TIME_FORMAT(TD_SCHEDULED_TIME(),'yyyy-MM-dd HH:mm', 'KST') as agg_date,
+--substr(member_list.last_date, 1,7) as month,
+member_list.platform,
+member_list.version,
+COUNT (member_list.member_idx) as member_count
+
+FROM
+(
+  SELECT 
+    header_application_memberid as member_idx,
+    --TD_TIME_FORMAT(time, 'yyyy-MM-dd HH:mm','KST'),
+    substr(header_application_device,1,3) as platform,
+    max(header_application_version) as version
+    -- RANK() OVER(PARTITION BY SMART_DIGEST(header_application_memberid), substr(header_application_device,1,3) ORDER BY TD_TIME_FORMAT(time, 'yyyy-MM-dd HH:mm','KST') DESC) rn
+  -- refer to:  http://stackoverflow.com/questions/10477085/oracle-partition-by-and-row-number-keyword 
+  FROM
+    api_log 
+  WHERE
+    TD_TIME_RANGE(time, 
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-30d','KST'),'KST'),
+    TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'),'KST')
+    and header_application_type = 'basic'
+    and header_application_version is not NULL 
+    and header_application_memberid is not NULL
+    and header_application_device is not NULL
+  
+  GROUP BY
+    header_application_memberid,
+    -- TD_TIME_FORMAT(time, 'yyyy-MM-dd HH:mm','KST'),
+    substr(header_application_device,1,3)
+  
+  
+) as member_list
+
+--WHERE
+--rn=1
+
+GROUP BY
+member_list.platform,
+member_list.version
