@@ -1,0 +1,33 @@
+select
+-- td_time_format(td_date_trunc('week', api_log.time, 'KST'), 'yyyy-MM-dd', 'KST') as td_date,
+td_time_format(TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-7d','KST'),'KST'), 'yyyy-MM-dd', 'KST') as td_date,
+case 
+  when dmg.age < 25 then '*-24'
+  when dmg.age >= 25 and dmg.age < 35 then '25-34'
+  when dmg.age >= 35 and dmg.age < 45 then '35-44'
+  when dmg.age >= 45 and dmg.age < 55 then '45-54'
+  when dmg.age >= 55 then '55-*'
+  else 'null_age'
+end as age_band, 
+if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_sex', dmg.sex) as gender,
+-- coalesce(dmg.sex, 'null_sex') as gender,
+param_q,
+count(distinct header_application_memberid) member_cnt,
+count(*) search_cnt
+   
+from
+    api_log left join members_demography as dmg on api_log.header_application_memberid = dmg.member_idx
+
+
+where
+td_time_range(api_log.time, -- '2022-05-30', '2023-08-07', 'KST')
+ TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-7d','KST'),'KST'),
+ TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-0d','KST'),'KST'), 'KST')
+and (url = '/search' or url = '/search/items')
+and param_q is not null
+and length(param_q) > 0
+and (param_page='1' or param_page is null)
+and header_application_memberid != '0'
+and dmg.age is not null
+
+group by 1, 2, 3, 4 having count(distinct header_application_memberid) >= 3
