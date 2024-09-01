@@ -1,0 +1,169 @@
+with signup_cnt_tbl as
+(
+select 
+case a.member_platform_type
+when '01' then 'iOS'
+when '02' then 'Android'
+when '10' then 'Web'
+when '11' then 'MobileWeb'
+end as platform,
+substr(a.date_day,1, 7) as signup_date_month,
+count(*) as signup_cnt
+from hellomarket_3.member_signup_platform_tbl as a left join hellomarket_3.member_signup_tbl as signup_date 
+  on signup_date.member_idx = a.member_idx
+where
+    TD_TIME_RANGE(cast(to_unixtime(from_iso8601_date(a.date_day)) as bigint),
+    TD_DATE_TRUNC('month',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-10d','KST'),'KST'),
+    TD_DATE_TRUNC('month',TD_SCHEDULED_TIME(),'KST'),'KST')
+  and (signup_date.member_dropped_out not in ('04') or signup_date.member_dropped_out is null)
+group by 1, 2
+),
+
+signup_tbl_android as
+(
+select date_day, member_idx
+from hellomarket_3.member_signup_platform_tbl
+where member_platform_type = '02' AND date_day >= '2020-09-01'  -- modifying to the start day of the target month 'yyyy-mm-01'
+),
+
+signup_tbl_ios as
+(
+select date_day, member_idx
+from hellomarket_3.member_signup_platform_tbl
+where member_platform_type = '01' AND date_day >= '2020-09-01'
+),
+
+signup_tbl_web as
+(
+select date_day, member_idx
+from hellomarket_3.member_signup_platform_tbl
+where member_platform_type = '10' AND date_day >= '2020-09-01'
+),
+
+signup_tbl_mobileweb as
+(
+select date_day, member_idx
+from hellomarket_3.member_signup_platform_tbl
+where member_platform_type = '11' AND date_day >= '2020-09-01'
+)
+
+
+
+
+select
+andoid.platform,
+andoid.visit_date_month, 
+andoid.signup_date_month,
+if(andoid.visit_date_month = andoid.signup_date_month, signup_cnt, member_count_month) as member_count_month
+
+from
+    (
+    SELECT
+      'Android' as platform,
+      TD_TIME_FORMAT(TD_DATE_TRUNC('month', api_log.TIME, 'KST'),'yyyy-MM','KST') AS visit_date_month,
+      substr(signup_tbl_android.date_day, 1, 7) AS signup_date_month,
+      COUNT(DISTINCT header_application_memberid) AS member_count_month,
+      max(signup_cnt_android.signup_cnt) as signup_cnt
+    FROM
+      api_log as api_log, 
+      signup_tbl_android 
+        left join (select * from signup_cnt_tbl where platform = 'Android') as signup_cnt_android
+                  on substr(signup_tbl_android.date_day,1, 7) = signup_cnt_android.signup_date_month
+    WHERE
+     TD_TIME_RANGE(api_log.TIME,
+     TD_DATE_TRUNC('month',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-10d','KST'),'KST'),
+      TD_DATE_TRUNC('month',TD_SCHEDULED_TIME(),'KST'),'KST')
+     AND api_log.header_application_memberid = signup_tbl_android.member_idx
+    GROUP BY
+      1, 2, 3
+    ) andoid
+
+union
+
+select
+ios.platform,
+ios.visit_date_month, 
+ios.signup_date_month,
+if(ios.visit_date_month = ios.signup_date_month, signup_cnt, member_count_month) as member_count_month
+
+from
+    (
+    SELECT
+      'iOS' as platform,
+      TD_TIME_FORMAT(TD_DATE_TRUNC('month', api_log.TIME, 'KST'),'yyyy-MM','KST') AS visit_date_month,
+      substr(signup_tbl_ios.date_day, 1, 7) AS signup_date_month,
+      COUNT(DISTINCT header_application_memberid) AS member_count_month,
+      max(signup_cnt_ios.signup_cnt) as signup_cnt
+    FROM
+      api_log as api_log, 
+      signup_tbl_ios 
+        left join (select * from signup_cnt_tbl where platform = 'iOS') as signup_cnt_ios
+                  on substr(signup_tbl_ios.date_day,1, 7) = signup_cnt_ios.signup_date_month
+    WHERE
+    TD_TIME_RANGE(api_log.TIME,
+     TD_DATE_TRUNC('month',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-10d','KST'),'KST'),
+      TD_DATE_TRUNC('month',TD_SCHEDULED_TIME(),'KST'),'KST')
+     AND api_log.header_application_memberid = signup_tbl_ios.member_idx
+    GROUP BY
+      1, 2, 3
+    ) ios
+  
+union
+
+select
+web.platform,
+web.visit_date_month, 
+web.signup_date_month,
+if(web.visit_date_month = web.signup_date_month, signup_cnt, member_count_month) as member_count_month
+
+from
+    (
+    SELECT
+      'Web' as platform,
+      TD_TIME_FORMAT(TD_DATE_TRUNC('month', api_log.TIME, 'KST'),'yyyy-MM','KST') AS visit_date_month,
+      substr(signup_tbl_web.date_day, 1, 7) AS signup_date_month,
+      COUNT(DISTINCT header_application_memberid) AS member_count_month,
+      max(signup_cnt_web.signup_cnt) as signup_cnt
+    FROM
+      api_log as api_log, 
+      signup_tbl_web 
+        left join (select * from signup_cnt_tbl where platform = 'Web') as signup_cnt_web
+                  on substr(signup_tbl_web.date_day,1, 7) = signup_cnt_web.signup_date_month
+    WHERE
+    TD_TIME_RANGE(api_log.TIME,
+     TD_DATE_TRUNC('month',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-10d','KST'),'KST'),
+      TD_DATE_TRUNC('month',TD_SCHEDULED_TIME(),'KST'),'KST')
+     AND api_log.header_application_memberid = signup_tbl_web.member_idx
+    GROUP BY
+      1, 2, 3
+    ) web
+    
+union
+
+select
+mobileweb.platform,
+mobileweb.visit_date_month, 
+mobileweb.signup_date_month,
+if(mobileweb.visit_date_month = mobileweb.signup_date_month, signup_cnt, member_count_month) as member_count_month
+
+from
+    (
+    SELECT
+      'MobileWeb' as platform,
+      TD_TIME_FORMAT(TD_DATE_TRUNC('month', api_log.TIME, 'KST'),'yyyy-MM','KST') AS visit_date_month,
+      substr(signup_tbl_mobileweb.date_day, 1, 7) AS signup_date_month,
+      COUNT(DISTINCT header_application_memberid) AS member_count_month,
+      max(signup_cnt_mobileweb.signup_cnt) as signup_cnt
+    FROM
+      api_log as api_log, 
+      signup_tbl_mobileweb 
+        left join (select * from signup_cnt_tbl where platform = 'MobileWeb') as signup_cnt_mobileweb
+                  on substr(signup_tbl_mobileweb.date_day,1, 7) = signup_cnt_mobileweb.signup_date_month
+    WHERE
+    TD_TIME_RANGE(api_log.TIME,
+     TD_DATE_TRUNC('month',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-10d','KST'),'KST'),
+      TD_DATE_TRUNC('month',TD_SCHEDULED_TIME(),'KST'),'KST')
+     AND api_log.header_application_memberid = signup_tbl_mobileweb.member_idx
+    GROUP BY
+      1, 2, 3
+    ) mobileweb
