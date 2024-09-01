@@ -1,0 +1,25 @@
+with 
+signup as (
+  select signup.member_idx, signup.time as signup_date, dmg.age, signup.member_platform_type as platform,
+  if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_sex', dmg.sex) as gender
+  from hellomarket_3.member_signup_tbl as signup
+    left join hellomarket.members_demography as dmg on signup.member_idx = dmg.member_idx
+  where TD_TIME_RANGE(signup.time, '2023-03-01', '2023-10-01', 'KST') -- 가입일
+),
+
+visit as (
+  select header_application_memberid as member_idx, min(time) as first_visit_at, max(time) as last_visit_at 
+  from hellomarket.api_log
+  where TD_TIME_RANGE(time, '2023-03-01', NULL, 'KST')  -- when is end date???
+  group by header_application_memberid
+)
+
+select 
+  s.member_idx,
+  s.age, s.gender, s.platform,
+  td_time_format((s.signup_date), 'yyyy-MM-dd HH:mm:ss', 'KST') as signup_at,
+  td_time_format((v.first_visit_at), 'yyyy-MM-dd HH:mm:ss', 'KST') as first_visit_at, 
+  td_time_format((v.last_visit_at), 'yyyy-MM-dd HH:mm:ss', 'KST') as last_visit_at
+from signup s left join  visit v on s.member_idx = v.member_idx
+-- where v.member_idx is NULL
+order by s.member_idx
