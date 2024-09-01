@@ -1,0 +1,31 @@
+
+select 
+a.date_day,
+a.max_page,
+a.platform,
+count(distinct uid) as uid_cnt
+
+from
+(
+  select 
+  td_time_format(time, 'yyyy-MM-dd', 'KST') as date_day,
+  substr(header_application_device, 1, 3) as platform,
+  header_application_uniqid as uid,
+
+  max(cast(param_page as INTEGER)) as max_page
+  
+  from api_log
+  
+  where url in ('/homefeeds', '/feeds')
+  and td_time_range(time,
+   -- '2020-12-01',
+    TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'),
+   -- '2022-11-21',
+    TD_DATE_TRUNC('day',TD_SCHEDULED_TIME(),'KST'), 
+   'KST')
+  and header_application_type = 'basic'
+  
+  group by 1, 2, 3
+) as a
+
+group by 1, 2, 3
