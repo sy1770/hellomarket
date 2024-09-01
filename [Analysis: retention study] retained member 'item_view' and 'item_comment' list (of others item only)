@@ -1,0 +1,54 @@
+with 
+users as (
+  select time as signup_at, member_idx
+  from hellomarket_3.member_signup_tbl
+  where TD_TIME_RANGE(time, '2017-07-01', '2017-08-01', 'KST')
+),
+
+events as (
+  select 
+    time as occured_at, 
+    url, 
+    if(param_idx is NULL, split_part(url, '/', 3), param_idx) as item_idx,
+    param_idx,
+    case 
+      when regexp_like(url, '^/item/\d{1,9}$') then 'item_view'
+      when url = '/item/comment' then 'item_comment'
+    end as event_name, 
+    header_application_memberid as member_idx
+  from hellomarket.api_log
+  where 
+    TD_TIME_RANGE(time, '2017-07-01', '2017-08-09', 'KST')
+    and ((regexp_like(url, '^/item/\d{1,9}$') and method='GET') or (url = '/item/comment' and param_idx is not null and method = 'POST'))
+),
+
+my_items as (
+  select
+    member_idx, 
+    item_idx
+  from hellomarket_2.retention_study_item_list
+)
+
+
+select 
+  u.member_idx, 
+  TD_TIME_FORMAT(u.signup_at, 'yyyy-MM-dd HH:mm:ss', 'KST') as signup_date,
+  count(case when e.event_name = 'item_view' then e.occured_at else NULL end) as item_views,
+  count(case when e.event_name = 'item_comment' then e.occured_at else NULL end) as item_comments
+  
+
+from 
+  users u 
+  left join events e on u.member_idx = e.member_idx 
+  left join my_items i on u.member_idx = i.member_idx and e.item_idx = i.item_idx
+  
+where
+  from_unixtime(e.occured_at) at time zone 'Asia/Seoul' < date_trunc('day',(date_add('day', 8, from_unixtime(u.signup_at) at time zone 'Asia/Seoul')))
+  and i.item_idx is NULL and i.member_idx is NULL  -- my item view and my item comment are excepted
+
+group by 
+  u.member_idx,
+  TD_TIME_FORMAT(u.signup_at, 'yyyy-MM-dd HH:mm:ss', 'KST')
+
+order by
+  u.member_idx ASC
