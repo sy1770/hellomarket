@@ -1,0 +1,96 @@
+with view as (
+  select 
+  td_time_format(api_log.time, 'yyy-MM-dd', 'KST') as view_day,
+  date_parse(td_time_format(api_log.time, 'yyyyMMddHHmmss', 'KST'), '%Y%m%d%H%i%s') as view_timestamp,
+
+  header_application_memberid as viewer_idx,
+  if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_gender', dmg.sex) as gender,
+  case 
+    when dmg.age < 25 then '*-24'
+    when dmg.age >= 25 and dmg.age < 35 then '25-34'
+    when dmg.age >= 35 and dmg.age < 45 then '35-44'
+    when dmg.age >= 45 and dmg.age < 55 then '45-54'
+    when dmg.age >= 55 then '55-*'
+    else 'null_age'
+  end as age_band,
+  case 
+    when cast(header_application_memberid as integer) >= 5821249 then 'after' 
+    else 'before' 
+  end as signup0301,
+
+  param_owner_idx as owner_idx,
+  SPLIT_PART(url,'/',3) as item_idx,
+
+  CONCAT(header_application_memberid, '-',SPLIT_PART(url,'/',3)) view_uniqid
+
+
+  from api_log left join members_demography as dmg on api_log.header_application_memberid = dmg.member_idx
+  where
+  TD_TIME_RANGE(api_log.time, '2023-03-01', '2023-09-01', 'KST')
+  and split_part(header_application_client_id, '-',1) = 'hellomarket' 
+  and regexp_like(url, '^/item/\d{1,}$')
+  and param_my_item ='false'
+  and substr(param_category_id, 1, 3) in ('HAA', 'HAB', 'HBB', 'HAC', 'HBC', 'HBD', 'HAE', 'HBE')
+  and method = 'GET'
+  and header_application_memberid > '0'
+  and (param_view_path = 'profile' or param_view_location='store_profile')
+),
+
+view_by_follower as (
+select 
+  view.view_day, view.gender, view.age_band, view.signup0301, view.view_uniqid
+
+from
+  view left join follow_list as follow on view.viewer_idx = follow.member_idx and view.owner_idx = follow.target_member_idx
+
+where
+follow.member_idx is not null
+and date_parse(follow.follow_datetime, '%Y%m%d%H%i%s') < view.view_timestamp
+),
+
+view_cnt as (
+  select 
+    view_day,
+    age_band,
+    gender,
+    signup0301,
+
+    count(distinct view_uniqid) as view_cnt
+
+  from
+    view
+  
+  group by 1, 2, 3, 4
+),
+
+view_by_follower_cnt as (
+  select
+    view_day,
+    age_band,
+    gender,
+    signup0301,
+
+    count(distinct view_uniqid) as view_by_follower_cnt
+  from
+    view_by_follower
+  
+  group by 1, 2, 3, 4
+)
+
+select
+  a.view_day,
+  a.age_band,
+  a.gender,
+  a.view_cnt,
+  a.signup0301,
+  b.view_by_follower_cnt
+from
+ view_cnt as a left join view_by_follower_cnt as b 
+  on a.view_day = b.view_day 
+  and a.age_band = b.age_band 
+  and a.gender = b.gender
+  and a.signup0301 = b.signup0301
+
+
+
+
