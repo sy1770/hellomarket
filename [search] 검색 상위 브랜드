@@ -1,0 +1,100 @@
+
+with
+-- param_brandidx 가 있는 경우 
+brand_param_pre as (
+select 
+  -- td_time_format(api_log.time, 'yyyy-MM-dd', 'KST') as date_day,
+  header_application_memberid as member_idx,
+  split(param_brandidx, ',') as split_brand
+
+from 
+  api_log
+
+where 
+  td_time_range(api_log.time, '2023-12-01', '2024-01-01', 'KST')
+  and (url = '/search' or url = '/search/items')
+  and (param_page='1' or param_page is null)
+  and ((param_memberidx is null) or not (param_memberidx > '0'))  -- param_memberidx 는 검색이 아닌 경우에 호출 (상세 지입 시, '판매자의 다른 상품' 보여줄 때)
+  and header_application_type = 'basic'
+  and param_brandidx > '0'
+  and header_application_memberid > '0'
+),
+
+brand_param as (
+  select
+  brand.b_idx as brand_idx, member_idx
+
+  from brand_param_pre cross join unnest(split_brand) as brand(b_idx)
+),
+
+-- param_brandidx가 없는 경우
+brand_keyword_pre as (
+  select
+    header_application_memberid as member_idx,
+    param_q as keyword
+    
+  from api_log
+  where
+    td_time_range(api_log.time, '2023-12-01', '2024-01-01', 'KST')
+    and (url = '/search' or url = '/search/items')
+    and (param_page='1' or param_page is null)
+    and ((param_memberidx is null) or not (param_memberidx > '0'))  -- param_memberidx 는 검색이 아닌 경우에 호출 (상세 지입 시, '판매자의 다른 상품' 보여줄 때)
+    and header_application_type = 'basic'
+    and (length(param_brandidx) = 0 or param_brandidx is null)
+    and length(param_q) > 0
+    and header_application_memberid > '0'
+),
+
+brand_keyword as (
+  select
+    
+    if(LENGTH(b.brand_korean)=1, 
+      if(CONTAINS(split(a.keyword, ' '), b.brand_korean), -- 한 글자인 경우는 띄어쓰기 되어 있으면 브랜드값 유효
+        b.brand_idx, 
+        null), 
+      if(LENGTH(b.brand_korean)=2,  -- 두 글자인 경우는 띄어쓰기 되어 있거나 맨 앞에 그 두 글자가 나타나면 브랜드값 유효
+        if(SUBSTR(a.keyword, 1, 2) = b.brand_korean or CONTAINS(split(a.keyword, ' '), b.brand_korean), 
+          b.brand_idx, 
+          null), 
+        b.brand_idx)) as brand_idx, -- 세 글자 이상은 무조건 브랜드값 유효
+    a.member_idx
+
+  from brand_keyword_pre a left join brand_tbl b on a.keyword like concat('%',b.brand_korean,'%')
+),
+
+brand_union as (
+  select *
+  from brand_param
+
+  union all
+
+  select *
+  from brand_keyword
+  where brand_idx is not null
+)
+-- ,
+
+-- brand_age_gender as (
+  select
+    '2023-12' as date_month,
+    a.brand_idx,
+    a.member_idx,
+    case 
+      when dmg.age < 25 then '*-24'
+      when dmg.age >= 25 and dmg.age < 35 then '25-34'
+      when dmg.age >= 35 and dmg.age < 45 then '35-44'
+      when dmg.age >= 45 and dmg.age < 55 then '45-54'
+      when dmg.age >= 55 then '55-*'
+      else 'null_age'
+    end as age_band, 
+    if(LENGTH(dmg.sex) <1 or dmg.sex is null, 'null_gender', dmg.sex) as gender
+  from
+    brand_union as a left join members_demography as dmg on a.member_idx = dmg.member_idx
+-- )
+
+
+/*
+select age_band, gender, brand_idx, count(distinct member_idx) as member_cnt
+from hellomarket_3.temp_popular_brand_in_search
+group by 1, 2, 3
+*/
