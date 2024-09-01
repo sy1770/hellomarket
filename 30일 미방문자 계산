@@ -1,0 +1,30 @@
+with
+visitor as 
+(
+  select -- td_time_format(time, 'yyyy-MM-dd', 'KST') as date_day, 
+  time as visit_time,
+  header_application_memberid as member_idx
+  from api_log
+  where td_time_range(time, '2023-01-01', '2023-03-25', 'KST')
+  group by 1,2
+)
+
+-- /*
+select count(distinct member_idx)
+from 
+(
+select member_idx, td_time_format(max(visit_time), 'yyyy-MM-dd' , 'KST')
+from visitor
+where member_idx in (select member_idx from visitor where td_time_range(visit_time, '2023-02-20', TD_TIME_ADD('2023-02-20', '1d', 'KST'), 'KST'))
+and td_time_range(visit_time, '2023-02-20', TD_TIME_ADD('2023-02-20', '31d', 'KST'), 'KST')
+group by 1 having td_time_format(max(visit_time), 'yyyy-MM-dd' , 'KST') = '2023-02-20'
+)
+-- */
+
+/*
+select td_time_format(visit_time, 'yyyy-MM-dd' , 'KST') date_day, count(distinct member_idx) as cnt_members
+from visitor
+where td_time_range(visit_time, '2023-02-01', '2023-03-01', 'KST')
+group by 1 
+order by 1
+*/
