@@ -1,0 +1,85 @@
+with signup_log as
+(
+  select
+  signup_date.member_idx,
+  signup_date.time,
+  case signup_platform.member_platform_type
+    when '01' then 'iOS'
+    when '02' then 'Android'
+    when '10' then 'Web'
+    when '11' then 'MobileWeb'
+  end as platform,
+  signup_agesex.age,
+  case 
+    when signup_agesex.age < 25 then '**-25'
+    when signup_agesex.age >= 25 and signup_agesex.age < 35 then '25-34'
+    when signup_agesex.age >= 35 and signup_agesex.age < 45 then '35-44'
+    when signup_agesex.age >= 45 and signup_agesex.age < 55 then '45-54'
+    when signup_agesex.age >= 55 then '55-**'
+    else 'null_age'
+  end as age_band, 
+  if(LENGTH(signup_agesex.sex) <1 or signup_agesex.sex is null, 'null_sex', signup_agesex.sex) as sex
+  -- coalesce(signup_agesex.sex, 'null_sex') as sex
+  
+  from hellomarket_3.member_signup_tbl as signup_date
+    left join hellomarket_3.member_signup_platform_tbl as signup_platform on signup_date.member_idx = signup_platform.member_idx
+    left join hellomarket.members_demography as signup_agesex on signup_date.member_idx = signup_agesex.member_idx
+  
+  where
+   TD_TIME_RANGE(signup_date.time,'2022-01-01', TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-0d','KST'),'KST'), 'KST')  -- 끝 날짜만 변경
+   and signup_platform.member_platform_type in ('01', '02', '11', '10')
+   and (signup_date.member_dropped_out not in ('04') or signup_date.member_dropped_out is null)
+),
+
+signup_cnt as
+(
+  select TD_DATE_TRUNC('day', signup_log.time, 'KST') as signup_date, 
+    platform, 
+    sex, 
+    age_band, 
+    count(distinct member_idx) as signup_db_cnt
+  from signup_log
+  group by 1, 2, 3, 4
+),
+
+visit_api_log as
+(
+  select time, header_application_memberid as member_idx
+  from hellomarket.api_log
+  where td_time_range(time, TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-1d','KST'),'KST'),  -- 며칠 만에 돌리는지에 따라 변경 ex) 1일 뒤에 돌린다면 -1d
+  TD_DATE_TRUNC('day',TD_TIME_ADD(TD_SCHEDULED_TIME(), '-0d','KST'),'KST'), 
+  'KST')  -- 방문기간에 맞춰 시작과 끝 모두 수정
+)
+
+
+
+select
+wag.visit_date,
+wag.signup_date,
+wag.platform,
+wag.sex,
+wag.age_band,
+if(wag.visit_date = wag.signup_date, wag.signup_week_cnt, wag.member_count_week) as member_count_week -- 실수로 week 사용 (변경 불가)
+
+from
+(
+  select 
+  TD_TIME_FORMAT(TD_DATE_TRUNC('day', visit_api_log.TIME, 'KST'),'yyyy-MM-dd','KST') AS visit_date,
+  TD_TIME_FORMAT(TD_DATE_TRUNC('day', signup_log.time,'KST'),'yyyy-MM-dd','KST') AS signup_date,
+  signup_log.platform,
+  signup_log.sex,
+  signup_log.age_band,
+  COUNT(DISTINCT visit_api_log.member_idx) AS member_count_week,
+  max(signup_cnt.signup_db_cnt) as signup_week_cnt
+  
+  from visit_api_log, signup_log 
+    left join signup_cnt 
+      on TD_DATE_TRUNC('day', signup_log.time, 'KST') = signup_cnt.signup_date
+      and signup_log.platform = signup_cnt.platform
+      and signup_log.sex = signup_cnt.sex
+      and signup_log.age_band = signup_cnt.age_band
+  
+  where visit_api_log.member_idx = signup_log.member_idx
+  
+  group by 1, 2, 3, 4, 5
+) wag
